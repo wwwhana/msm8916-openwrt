@@ -126,11 +126,26 @@ rules. The script's default parallelism is the builder CPU count plus one;
 use an appropriately limited builder on a shared machine. Avoid `clean` when
 continuing an existing build.
 
-Expected images have prefix
-`msm8916-openwrt-msm89xx-msm8916-generic-mifib-v18-squashfs-`, with suffixes
-`boot.img`, `system.img`, `sysupgrade.bin`, `gpt_both0.bin` and `firmware.zip`.
+Expected files share the prefix
+`msm8916-openwrt-msm89xx-msm8916-generic-mifib-v18-`, with suffixes
+`squashfs-boot.img`, `squashfs-system.img`, `squashfs-sysupgrade.bin`,
+`squashfs-gpt_both0.bin`, `flash.sh` and `firmware.zip`.
 Check the actual boot DTB, upgrade metadata and GPT rather than filenames
 alone. The first compatible must be `mifib-v18,generic`.
+
+For a bootloader-only rebuild, select the same board and set
+`bootloader_only=true` in Board Build. This uses the existing firmware
+generator and Docker builder, without rebuilding OpenWrt. The separate
+`experimental-mifib-v18-bootloader-<commit>` artifact contains only the ZIP
+and installer; production images and a matching recovery image are still
+required for migration. The workflow checks required output files before
+uploading, and `flash.sh`/`firmware.zip` names do not contain `-squashfs-`.
+
+`firmware.zip` includes all five boot-chain components: `sbl1.mbn`,
+`rpm.mbn`, `tz.mbn`, `hyp.mbn` (qhypstub) and `aboot.mbn` (the compiled
+lk2nd/lk1st build). It is part of the migration, not a replacement for the
+production `boot.img` or the separate rescue image. Check the actual ZIP
+contents and component sizes against the target GPT before installation.
 
 ## Installation and recovery constraints
 
@@ -153,6 +168,23 @@ requires its production boot image, matching modules and private
 of Git. **Do not rename V12's frozen recovery image to V18**: it carries a V12
 DTB and that unit's Wi-Fi calibration. The release workflow's frozen-image
 allow-list stays limited to its existing verified boards.
+
+After installing both the patched bootloader and a matching V18 recovery
+image, the intended button entry is: power off completely, hold **RST**,
+then turn the device on while keeping RST held for about two seconds.
+With a battery fitted, disconnecting USB alone may leave the device powered. The bootloader maps the initial
+GPIO102 active-low choice to the recovery key and also enables recovery after
+three failed boots (`BOOT_FAILOVER_COUNT=3`). Physical button entry and
+automatic failover on this A8 remain unverified; the setting alone is not a
+successful recovery test.
+
+Local recovery preparation extracted this unit's nine WCNSS firmware files
+from `modem.bin`. The 29,816-byte Wi-Fi NV file extracted from `persist` is
+identical in both supplied complete backups, even though the complete
+`persist` partitions differ. These inputs stay in the git-ignored
+`msm89xx/recovery/blobs/mifib-v18/` directory. Recovery still needs hostapd,
+its library dependencies and modules from the same production build; private
+calibration is not part of the GitHub Actions artifact.
 
 First-boot firmware extraction uses the preserved original `modem` and
 `persist` partitions. Early missing-firmware messages can precede extraction;
@@ -226,6 +258,7 @@ device and perform no real EDL operations. They are also included in CI.
 | Compiled DTB contents | 461 nodes; V18 identity, L6 at 1.8 V with both power flags, reset GPIO102 active-low, 4.2 V battery profile, only SIM pulse LED output, SDC2 disabled |
 | Generated GPT against original A8 radio sizes/offsets | Passed using backup metadata and sparse test files; no radio contents or device were written |
 | Radio migration failure/success tests | Passed: 22 tests on both Linux and macOS |
+| GitHub Actions test suites for `ce14a4f` | [Passed](https://github.com/wwwhana/msm8916-openwrt/actions/runs/42040239138): modem guard, 22 radio migration tests, and 54 board-profile checks |
 | Complete OpenWrt build and image inspection | Not run; another device held the shared build lock during these checks |
 | Device boot, USB network, Wi-Fi, LTE traffic | Not run |
 | Charging, temperature, reset/recovery, cold boots, traffic soak | Not run |

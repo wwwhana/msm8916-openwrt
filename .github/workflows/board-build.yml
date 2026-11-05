@@ -22,12 +22,16 @@ on:
         required: false
         default: ''
         type: string
+      bootloader_only:
+        description: 'Build only the bootloader ZIP and installer (requires a device)'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: board-build-${{ github.event.pull_request.number || github.ref_name }}
+  group: board-build-${{ github.event.pull_request.number || github.ref_name }}-${{ inputs.bootloader_only && 'bootloader' || 'full' }}
   cancel-in-progress: true
 
 jobs:
@@ -50,9 +54,18 @@ jobs:
           DEVICE: ${{ inputs.device }}
           BASE: ${{ github.base_ref }}
           EVENT: ${{ github.event_name }}
+          BOOTLOADER_ONLY: ${{ inputs.bootloader_only }}
         run: |
           set -euo pipefail
+          if [ "$BOOTLOADER_ONLY" = "true" ] && [ -z "$DEVICE" ]; then
+            echo '::error::Bootloader-only builds require an explicit device'
+            exit 1
+          fi
           if [ -n "$DEVICE" ]; then
+            [[ "$DEVICE" =~ ^[a-z0-9_-]+$ ]] && [ -f "diffconfigs/$DEVICE" ] || {
+              echo '::error::Unknown device'
+              exit 1
+            }
             LIST="\"$DEVICE\""
             REASON="dispatch: $DEVICE"
           elif [ "$EVENT" = "pull_request" ]; then
@@ -95,6 +108,7 @@ jobs:
           sudo apt-get clean
 
       - name: Cache OpenWrt downloads & toolchain
+        if: ${{ !inputs.bootloader_only }}
         uses: actions/cache@v4
         with:
           path: |
@@ -106,16 +120,59 @@ jobs:
             openwrt-pr-cache-
 
       - name: Prepare OpenWrt tree
+        if: ${{ !inputs.bootloader_only }}
         run: ./build.sh prepare
 
       - name: Build ${{ matrix.device }}
+        if: ${{ !inputs.bootloader_only }}
         run: ./build.sh build "${{ matrix.device }}"
+
+      - name: Build bootloader bundle only
+        if: inputs.bootloader_only
+        env:
+          DEVICE: ${{ matrix.device }}
+        run: |
+          set -euo pipefail
+          ./build.sh image
+          export HOST_UID="$(id -u)" HOST_GID="$(id -g)"
+          docker compose -f devenv/docker-compose.yml run --rm -T --no-deps \
+            -w /repo -e DEVICE builder bash -euc '
+              profile=$(sed -n "s/^CONFIG_TARGET_msm89xx_msm8916_DEVICE_\(.*\)=y$/\1/p" "diffconfigs/$DEVICE")
+              [[ "$profile" =~ ^[a-z0-9_-]+$ ]] || exit 1
+              export TOPDIR=/repo/openwrt AARCH64_CROSS=aarch64-linux-gnu-
+              export AARCH64_CC="${AARCH64_CROSS}gcc" AARCH64_AS="${AARCH64_CROSS}as"
+              export AARCH64_LD="${AARCH64_CROSS}ld" AARCH64_AR="${AARCH64_CROSS}ar"
+              export AARCH64_OBJCOPY="${AARCH64_CROSS}objcopy"
+              out="$TOPDIR/bin/targets/msm89xx/msm8916"
+              prefix="msm8916-openwrt-msm89xx-msm8916-$profile"
+              mkdir -p "$out"
+              ./msm89xx/image/generate_firmware.sh "$out/$prefix-firmware.zip"
+              install -m 755 ./msm89xx/image/flash.sh "$out/$prefix-flash.sh"
+            '
+
+      - name: Check manual build outputs
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          BOOTLOADER_ONLY: ${{ inputs.bootloader_only }}
+        run: |
+          set -euo pipefail
+          out=openwrt/bin/targets/msm89xx/msm8916
+          suffixes=(flash.sh firmware.zip)
+          if [ "$BOOTLOADER_ONLY" != "true" ]; then
+            suffixes+=(squashfs-gpt_both0.bin squashfs-boot.img squashfs-system.img squashfs-sysupgrade.bin)
+          fi
+          for suffix in "${suffixes[@]}"; do
+            compgen -G "$out/*-$suffix" >/dev/null || {
+              echo "::error::Required output missing: $suffix"
+              exit 1
+            }
+          done
 
       - name: Upload manual test build
         if: github.event_name == 'workflow_dispatch' && success()
         uses: actions/upload-artifact@v4
         with:
-          name: experimental-${{ matrix.device }}-${{ github.sha }}
+          name: experimental-${{ matrix.device }}${{ inputs.bootloader_only && '-bootloader' || '' }}-${{ github.sha }}
           if-no-files-found: error
           retention-days: 14
           path: |
@@ -123,8 +180,8 @@ jobs:
             openwrt/bin/targets/msm89xx/msm8916/*-squashfs-boot.img
             openwrt/bin/targets/msm89xx/msm8916/*-squashfs-system.img
             openwrt/bin/targets/msm89xx/msm8916/*-squashfs-sysupgrade.bin
-            openwrt/bin/targets/msm89xx/msm8916/*-squashfs-flash.sh
-            openwrt/bin/targets/msm89xx/msm8916/*-squashfs-firmware.zip
+            openwrt/bin/targets/msm89xx/msm8916/*-flash.sh
+            openwrt/bin/targets/msm89xx/msm8916/*-firmware.zip
             openwrt/bin/targets/msm89xx/msm8916/*.manifest
 
       - name: Report
