@@ -247,6 +247,15 @@ eight fixed-width rows to `/dev/tty1`. It leaves the serial login available
 and keeps the screen lit. Both service and executable check the A8 board
 identity before running.
 
+The V18 diffconfig explicitly enables `CONFIG_DISPLAY_SUPPORT=y`: OpenWrt
+propagates this prerequisite from DRM to `a8-display`; omitting it silently
+removes the display package during configuration. The panel package brings
+in framebuffer console support and the 8x16 font through `kmod-fb`.
+The target kernel config explicitly disables `CONFIG_DRM_MSM`, which the
+OpenWrt generic config omits. Enabling DRM without this setting prompts for
+the unrelated Qualcomm display/GPU driver and stops unattended builds at
+`syncconfig`. This SPI panel uses `panel-mipi-dbi` instead.
+
 After installing a display-enabled build, check:
 
 ```sh
@@ -306,11 +315,6 @@ The installed baseline already contains `luci-proto-modemmanager`,
 APN/authentication/IP settings under Network → Interfaces; the second reads
 the SIM's home operator and applies an APN from its TSV tables. Its shipped
 table has no Korean entries, so its generic fallback is insufficient here.
-
-The V18 diffconfig explicitly enables `CONFIG_DISPLAY_SUPPORT=y`: OpenWrt
-propagates this prerequisite from DRM to `a8-display`; omitting it silently
-removes the display package during configuration. The panel package brings
-in framebuffer console support and the 8x16 font through `kmod-fb`.
 
 The V18 profile adds `a8-apn`, a profile UI and offline database extension
 for **the existing `qcom-carrier-autocfg` daemon**. There is no second APN
