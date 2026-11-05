@@ -299,6 +299,15 @@ if [ -f "$ROOT/packages/adbd/Makefile" ]; then
     fi
 fi
 
+if [ -f "$ROOT/packages/a8-apn/Makefile" ]; then
+    section "APN profiles"
+    if python3 "$ROOT/tests/a8-apn/test_apn.py"; then
+        ok "APN database, selection and existing daemon integration checks"
+    else
+        bad "APN profile checks failed"
+    fi
+fi
+
 # ---- self-check ------------------------------------------------------------
 if [ "$SELF_CHECK" -eq 1 ]; then
     section "self-check (mutants caught, valid gates accepted)"

@@ -299,6 +299,67 @@ output remain **unverified on this device**. This update uses the normal
 boot/rootfs update path; adding ADB does not require changing GPT, the
 bootloader, recovery or any radio/NV partition.
 
+## Travel APN profiles and SMS
+
+The installed baseline already contains `luci-proto-modemmanager`,
+`qcom-carrier-autocfg` and `luci-app-sms-manager`. The first provides manual
+APN/authentication/IP settings under Network → Interfaces; the second reads
+the SIM's home operator and applies an APN from its TSV tables. Its shipped
+table has no Korean entries, so its generic fallback is insufficient here.
+
+The V18 profile adds `a8-apn`, a profile UI and offline database extension
+for **the existing `qcom-carrier-autocfg` daemon**. There is no second APN
+daemon. Other boards retain their original provisioning path. On V18 the
+extension uses netifd's existing ModemManager protocol and updates only the
+cellular interface's APN, credentials, authentication, IP type and roaming
+permission when values change. It does not load carrier MCFG, reset the
+baseband, compare a roaming network with the home operator, or write raw NV.
+
+Open **Network → APN profiles**:
+
+- Automatic mode uses the SIM's home MCC+MNC and provider name. A matching
+  saved profile takes precedence; an explicitly selected database candidate
+  is next, followed by the existing custom TSV override, an exact provider
+  name match, the original carrier table and the remaining database entries.
+  A selection from the previous SIM is ignored when absent from the new
+  SIM's candidates. The visited network never selects the APN.
+- Save named profiles for travel SIMs/MVNOs, including credentials and IP
+  type, then select one manually or associate it with a home operator and
+  optional provider-name condition. Automatic discovery cannot distinguish
+  every reseller/plan; a saved override handles those cases.
+- Turning **APN setting management** off preserves the normal Interfaces
+  page's manual configuration. The old daemon path does not overwrite it.
+- Data roaming defaults off and can be explicitly allowed on this page.
+  A missing/locked SIM or missing profile causes no network configuration
+  writes. Existing non-default APNs are retained as the selected `previous`
+  profile during first installation; the old `jionet` default is also saved
+  without deleting it while a SIM is absent.
+
+The bundled Internet APNs come from the public-domain
+[GNOME provider database](https://github.com/GNOME/mobile-broadband-provider-info/tree/c6796724e78483ee34fd999fe1532f3c12d59fa6),
+pinned and hash-checked at build time: 802 home networks and 1,494 Internet
+APN entries. MMS/IMS-only entries are excluded. LG U+ (`45006`) resolves to
+`internet.lguplus.co.kr`; KT/SKT entries are also present. Lookup works
+without internet access. `/etc/config/a8_apn` is mode 0600 and preserved as
+package configuration; status responses omit usernames and passwords.
+
+The status screen includes `APN AUTO`, `APN PROFILE` or `APN MANUAL` and
+shows `SIM NONE` for an absent card. SMS remains managed by the existing
+SMS Manager page; this change does not send or delete messages. The owner
+removed the SIM for other use, so LTE data and incoming SMS tests are
+**not run**, rather than treated as device failures. UI/ADB/LCD checks do
+not require a SIM.
+
+Hardware-free checks: five APN tests passed, including actual fixture-file
+writes; the selection/apply checks also passed under a standalone Lua 5.1.5
+interpreter matching OpenWrt's Lua generation. Nine display tests and twelve
+USB/package-preparation tests passed. The board harness without self-check
+passed 49 checks, with zero failures and three expected skips.
+Run `python3 tests/a8-apn/test_apn.py` and
+`python3 tests/a8-display/test_display.py`. The Lua selection checks run
+when an interpreter is available; database and integration checks always run.
+Actual SIM/APN switching, data connectivity and SMS reception remain unverified.
+
 ## Installation and recovery constraints
 
 **Android and OpenWrt use different partition layouts.** Android's `boot` is

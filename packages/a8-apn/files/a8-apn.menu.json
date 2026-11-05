@@ -1,0 +1,8 @@
+{
+  "admin/network/a8-apn": {
+    "title": "APN profiles",
+    "order": 35,
+    "action": { "type": "view", "path": "a8-apn" },
+    "depends": { "acl": ["a8-apn"], "uci": { "a8_apn": true } }
+  }
+}

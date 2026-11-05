@@ -1,0 +1,7 @@
+{
+  "a8-apn": {
+    "description": "Travel APN profiles",
+    "read": { "uci": ["a8_apn"], "ubus": { "a8.apn": ["status"] } },
+    "write": { "uci": ["a8_apn"] }
+  }
+}

@@ -1,0 +1,10 @@
+#!/usr/bin/lua
+local service = require('a8_apn.service')
+local json = require('luci.jsonc')
+if arg[1] == 'status' then
+    print(json.stringify((service.inspect())))
+elseif arg[1] == 'apply' then
+    print(json.stringify(service.apply()))
+else
+    io.stderr:write('Usage: a8-apn {status|apply}\n'); os.exit(1)
+end

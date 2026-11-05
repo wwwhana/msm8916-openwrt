@@ -499,6 +499,14 @@ LAST_IMSI=""
 
 # Main event loop: monitor SIM state
 while true; do
+	# Optional travel profiles extend this daemon; only one service owns APNs.
+	# It also owns the disabled/manual state, so legacy provisioning must wait.
+	if [ -x /usr/sbin/a8-apn ] && [ -f /etc/config/a8_apn ]; then
+		/usr/sbin/a8-apn apply >/dev/null
+		sleep 10
+		continue
+	fi
+
 	# Check if ModemManager is running and detected a modem
 	MODEM_PATH=$(mmcli -L 2>/dev/null | grep -o '/org/freedesktop/ModemManager1/Modem/[0-9]*' | head -n 1)
 

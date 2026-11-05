@@ -1,0 +1,28 @@
+#!/bin/sh
+tr '\000' '\n' < /proc/device-tree/compatible | grep -qx 'mifib-v18,generic' || exit 0
+[ "$(uci -q get a8_apn.settings.migrated)" != 1 ] || exit 0
+# Preserve a manually configured APN as a named profile on first installation.
+apn="$(uci -q get network.modem.apn)"
+if [ -n "$apn" ]; then
+	uci set a8_apn.previous=profile
+	uci set a8_apn.previous.enabled=1
+	uci set a8_apn.previous.name='Previous settings'
+	uci set "a8_apn.previous.apn=$apn"
+	for key in username password iptype; do
+		value="$(uci -q get "network.modem.$key")"
+		[ -z "$value" ] || uci set "a8_apn.previous.$key=$value"
+	done
+	auth="$(uci -q get network.modem.allowedauth)"
+	case "$auth" in
+		pap|chap|none) uci set "a8_apn.previous.auth=$auth" ;;
+		'pap chap'|'chap pap') uci set a8_apn.previous.auth=both ;;
+		*) uci set a8_apn.previous.auth=none ;;
+	esac
+	if [ "$apn" != jionet ]; then
+		uci set a8_apn.settings.mode=profile
+		uci set a8_apn.settings.profile=previous
+	fi
+fi
+uci set a8_apn.settings.migrated=1
+uci commit a8_apn
+chmod 0600 /etc/config/a8_apn

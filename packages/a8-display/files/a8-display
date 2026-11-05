@@ -36,6 +36,11 @@ wifi_line() {
 
 modem_line() {
 	local modem state
+	state=$(read_value /var/run/a8-apn.json | jsonfilter -e '@.state' 2>/dev/null)
+	case "$state" in
+		no-sim) printf 'SIM NONE'; return ;;
+		sim-locked) printf 'SIM LOCKED'; return ;;
+	esac
 	modem=$(mmcli --timeout=3 -L 2>/dev/null | sed -n 's|.*/Modem/\([0-9][0-9]*\).*|\1|p' | head -n 1)
 	[ -n "$modem" ] || { printf 'MODEM --'; return; }
 	state=$(mmcli --timeout=3 -m "$modem" -K 2>/dev/null |
@@ -43,17 +48,36 @@ modem_line() {
 	printf 'MODEM %s' "${state:---}"
 }
 
+apn_line() {
+	local data state mode
+	data=$(read_value /var/run/a8-apn.json)
+	[ -n "$data" ] || { printf 'APN --'; return; }
+	state=$(printf '%s' "$data" | jsonfilter -e '@.state' 2>/dev/null)
+	mode=$(printf '%s' "$data" | jsonfilter -e '@.mode' 2>/dev/null)
+	case "$state" in
+		disabled) printf 'APN MANUAL' ;;
+		no-match|profile-not-found|invalid-*) printf 'APN NEED SETUP' ;;
+		commit-failed|restart-failed|wrong-interface) printf 'APN ERROR' ;;
+		*) case "$mode" in
+			auto) printf 'APN AUTO' ;;
+			profile) printf 'APN PROFILE' ;;
+			*) printf 'APN --' ;;
+		esac ;;
+	esac
+}
+
 show_status() {
-	local battery wifi modem address uptime
+	local battery wifi modem address uptime apn
 	battery=$(battery_line)
 	wifi=$(wifi_line)
 	modem=$(modem_line)
 	address=$(ubus -t 3 call network.interface.lan status 2>/dev/null |
 		jsonfilter -e '@["ipv4-address"][0].address' 2>/dev/null)
 	uptime=$(awk '{printf "UP %dh %02dm",$1/3600,($1%3600)/60}' /proc/uptime)
+	apn=$(apn_line)
 	# Exactly eight rows, no trailing newline: no scrolling on 128x128/8x16.
 	printf '\033[H%-16.16s\r\n%-16.16s\r\n%-16.16s\r\n%-16.16s\r\n%-16.16s\r\n%-16.16s\r\n%-16.16s\r\n%-16.16s' \
-		'OpenWrt A8' '' "$battery" "$wifi" "$modem" "${address:---}" "$uptime" ''
+		'OpenWrt A8' '' "$battery" "$wifi" "$modem" "${address:---}" "$uptime" "$apn"
 }
 
 main() {

@@ -63,11 +63,33 @@ read_value() {
     def test_voltage_when_capacity_is_unavailable(self):
         self.assertEqual(self.shell("battery_line", volt="3920000"), b"BAT 3.92V")
 
+    def test_missing_sim_is_a_normal_status(self):
+        output = self.shell('''
+read_value() { printf '{}'; }
+jsonfilter() { printf no-sim; }
+mmcli() { exit 91; }
+modem_line
+''')
+        self.assertEqual(output, b"SIM NONE")
+
+    def test_apn_mode_and_missing_profile(self):
+        for state, mode, expected in [('ready', 'auto', b'APN AUTO'),
+                                      ('ready', 'profile', b'APN PROFILE'),
+                                      ('disabled', 'auto', b'APN MANUAL'),
+                                      ('no-match', 'auto', b'APN NEED SETUP')]:
+            body = '''read_value() { printf '{}'; }
+jsonfilter() { case "$2" in '@.state') printf '%s';; '@.mode') printf '%s';; esac; }
+apn_line
+''' % (state, mode)
+            with self.subTest(state=state, mode=mode):
+                self.assertEqual(self.shell(body), expected)
+
     def test_status_fits_console_without_scrolling(self):
         output = self.shell('''
 battery_line() { printf 'BAT 50%%'; }
 wifi_line() { printf 'WIFI ON'; }
 modem_line() { printf 'MODEM A-VERY-LONG-STATE'; }
+apn_line() { printf 'APN AUTO'; }
 ubus() { printf '192.168.123.123'; }
 jsonfilter() { cat; }
 awk() { printf 'UP 0h 01m'; }
@@ -79,6 +101,7 @@ show_status
         self.assertTrue(all(len(row) == 16 for row in rows))
         self.assertEqual(rows[4], b"MODEM A-VERY-LON")
         self.assertEqual(rows[5].rstrip(), b"192.168.123.123")
+        self.assertEqual(rows[7].rstrip(), b"APN AUTO")
 
 
 if __name__ == "__main__":
