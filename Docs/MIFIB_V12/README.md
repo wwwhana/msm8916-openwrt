@@ -1,5 +1,10 @@
 # MIFIB-V12 — stock Android device tree
 
+For the LCD-equipped A8 / HM-MiFiB-V18 variant, see
+[the V18 port notes](../MIFIB_V18/README.md). Its closest stock DTB differs
+in the GC9107 initialization sequence and L6 power flags; V12's measured
+LED layout and hardware test results do not establish V18 support.
+
 Reference copy of the **stock Android DTB** for the MIFIB-V12 (MIFID) dongle,
 captured from a live, working Android install on 2026-10-22. Kept so the
 OpenWrt port can be diffed against what the vendor actually ships.

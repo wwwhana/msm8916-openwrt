@@ -207,8 +207,9 @@ if [ ! -f "$BUILDDIR/lk2nd/build-lk1st-msm8916/emmc_appsboot.mbn" ]; then
     # --- Per-board recovery-key selection -------------------------------------
     # The recovery key is the GPIO lk2nd samples at power-on to decide whether
     # to boot the recovery partition.  It is board-specific:
-    #   * mf800b / mifib-v12 are buttonless; their reset button is wired to
+    #   * mf800b / mifib-v12 use their reset button, wired to
     #     TLMM GPIO102 (active-low) and is safe to use as the recovery key.
+    #     mifib-v18 has the same stock DT mapping; hardware test pending.
     #   * hmuf02v5 (== hmu05, same board) has its reset button on TLMM GPIO37,
     #     which is ALSO the EDL strap: holding it at power-on drops the SoC
     #     straight into EDL before lk2nd runs, so it can never act as a
@@ -219,7 +220,7 @@ if [ ! -f "$BUILDDIR/lk2nd/build-lk1st-msm8916/emmc_appsboot.mbn" ]; then
     FW_NAME="$(basename "${OUT_FILE%.zip}")"
     _auto_gpio=""; _auto_low=""
     case "$FW_NAME" in
-        *mifib-v12*|*mf800b*) _auto_gpio=102; _auto_low=1 ;;
+        *mifib-v12*|*mifib-v18*|*mf800b*) _auto_gpio=102; _auto_low=1 ;;
     esac
     if [ -n "${RECOVERY_KEY_GPIO:-}" ]; then
         RECOVERY_KEY_ACTIVE_LOW="${RECOVERY_KEY_ACTIVE_LOW:-1}"

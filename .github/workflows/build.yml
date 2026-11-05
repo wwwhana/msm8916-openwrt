@@ -20,6 +20,7 @@ on:
           - hmuf02v5
           - mf800b
           - mifib-v12
+          - mifib-v18
           - uf02
           - uf896
           - ufi001b

@@ -77,8 +77,14 @@ Recent additions on top of the base port:
 | **`uf02`**    | `generic-uf02`    | Generic UF02 / UF2 Stick   | MSM8916 | 512 MB | 4 GB eMMC | Green / Blue / Red      |
 | **`mf800b`**  | `generic-mf800b`  | Generic MF800B 4G MiFi     | MSM8916 | 512 MB | 4 GB eMMC | Bi-colour WLAN/WAN      |
 | **`mifib-v12`** | `generic-mifib-v12` | HM-MIFIB-V12 4G LTE Dongle | MSM8916 | 512 MB | 4 GB eMMC | Bi-colour WLAN/WAN, 4-bar battery, SIM hot-swap |
+| **`mifib-v18`** | `generic-mifib-v18` | A8 (HM-MiFiB-V18), experimental | MSM8916 | 512 MB stock configuration | 4 GB eMMC | LCD; display and lamp mapping unverified |
 | **`uf896`**     | `generic-uf896`     | UF896 (v1.1) 4G LTE Router  | MSM8916 | 512 MB | 4 GB eMMC | Tri-colour + charger/network/wifi/data LEDs |
 | **`jz02`**      | `generic-jz02`      | JZ02 Battery MiFi (3 SIM switch lines) | MSM8916 | 512 MB | 4 GB eMMC | Network tri-colour + Wi-Fi red + battery red/green |
+
+The **A8 / HM-MiFiB-V18** target is experimental. Its stock DTB closely matches
+V12, but OpenWrt has not been booted on this unit. LCD, SD and WPS support are
+not enabled, and no verified V18 recovery image is provided. Read
+[`Docs/MIFIB_V18/README.md`](Docs/MIFIB_V18/README.md) before building or installing.
 
 ### Per-board feature matrix
 
@@ -91,6 +97,7 @@ Recent additions on top of the base port:
 | `uf02`    |      ✅       |    ✅     |          ✅           |          ✅           |           ✅            |         ✅          |         —          |
 | `mf800b`  |      ✅       |    ✅     |          ✅           |          ✅           |           ✅            |         —           |         —          |
 | `mifib-v12` |    ✅       |    ✅     |          ✅           |          ✅           |           ✅            |         ✅          |         —          |
+| `mifib-v18` | untested | untested | untested | untested | untested | inherited, untested | untested |
 | `uf896` |    ✅       |    ✅     |          ✅           |          ✅           |           ✅            |         ✅          |         —          |
 | `jz02` |    —       |    ✅     |          ✅           |          ✅           |           ✅            |         ✅          |         —          |
 
@@ -108,6 +115,7 @@ Recent additions on top of the base port:
 | `uf02`    |           —            |      —       |         —          |      —       |
 | `mf800b`  |           ✅           |      ✅      |         ✅         |      —       |
 | `mifib-v12` |         ✅           |      ✅      |         ✅         |      ✅      |
+| `mifib-v18` | inherited, untested | untested | configured; rescue image pending | untested |
 | `uf896` |         —           |      —      |         —         |      —      |
 | `jz02` |         ✅           |      ✅      |         ✅         |      —      |
 
@@ -269,11 +277,12 @@ Choice [1/2/3/4]:
 #### What the Script Automatically Handles:
 
 * **Full-Device Dump (recommended first)**: `./...flash.sh --mode backup` reads the **whole device** over EDL — either as one raw image (`edl rf` → `./<device>-dump.bin`) or partition-wise (`edl rl` → `./<device>-dump/`, restore one partition with `edl w <part> <file>`). The dump is **named after the device**: the name comes from `--device-name`, a remembered `.flash-device-name`, or a prompt at backup time, so a dump from one unit is never mistaken for another's. Before any destructive mode the script checks for a dump **for this device** and, unless `--yes`, refuses to continue without one.
-* **Safety Backup**: Backs up all critical device-unique radio/calibration partitions (`fsc`, `fsg`, `modemst1`, `modemst2`, `modem`, `persist`, `sec`) into a local `saved/` directory. Every read is validated; if any backup fails (error, or an empty/short file) the script **aborts before writing anything**, leaving the device untouched.
+* **Safety Backup**: Saves all seven radio/calibration partitions (`fsc`, `fsg`, `modemst1`, `modemst2`, `modem`, `persist`, `sec`) into `saved/`, requires their exact GPT sizes and compares a second device read byte for byte. Existing backups are preserved and must also match the connected device before reuse. A failed read or mismatch **stops migration before any device write**.
+* **Partition Preflight**: Checks the target GPT's headers, CRCs, partition bounds and overlaps, and requires unchanged radio sizes before writing the GPT. Afterward, EDL's reported partition locations must match the target. A missing required recovery image also stops migration before writes.
 * **GPT Repartitioning**: Flashes the OpenWrt partition table (`*-squashfs-gpt_both0.bin`) via raw sector writes (`primary.bin`, `backup_entries.bin`, `backup_header.bin`) to repartition the eMMC safely.
 * **Firmware Extraction & Flashing**: Extracts `aboot.mbn`, `hyp.mbn`, `rpm.mbn`, `sbl1.mbn`, and `tz.mbn` from the board's `*-firmware.zip` and flashes them to the newly repartitioned layout.
 * **OpenWrt Installation**: Flashes the OpenWrt kernel/boot image (`*-squashfs-boot.img`), the rootfs system image (`*-squashfs-system.img`), and wipes `rootfs_data` (fast 2 MiB superblock wipe, reformatted on next boot).
-* **Partition Restoration**: Restores all previously backed-up calibration and radio partitions back to the device.
+* **Partition Restoration**: Restores and immediately reads back each of the seven radio partitions. A read error or byte mismatch stops before the next partition, OpenWrt image write or reboot. See the [A8 radio preservation notes](Docs/MIFIB_V18/README.md#radio-data-preservation).
 * **Automatic Reboot**: Reboots the device straight into OpenWrt (`edl reset`).
 
 ---

@@ -159,6 +159,14 @@ define Device/generic-mifib-v12
 endef
 TARGET_DEVICES += generic-mifib-v12
 
+define Device/generic-mifib-v18
+	$(Device/generic-mifib-v12)
+	DEVICE_MODEL := A8 (HM-MiFiB-V18)
+	DEVICE_DTS := msm8916-generic-mifib-v18
+	SUPPORTED_DEVICES := mifib-v18,generic
+endef
+TARGET_DEVICES += generic-mifib-v18
+
 
 define Device/generic-uf896
     $(Device/msm8916)

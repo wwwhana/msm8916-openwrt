@@ -1,0 +1,48 @@
+From: OpenWrt MSM8916 Maintainers
+Subject: [PATCH] arm64: dts: qcom: add A8 HM-MiFiB-V18
+
+Reuse the closely matching V12 board description, preserve the stock L6
+power policy, and give A8 its own upgrade identity. Do not drive the
+V12-specific status lamp pins on this LCD board.
+
+--- /dev/null
++++ b/arch/arm64/boot/dts/qcom/msm8916-generic-mifib-v18.dts
+@@ -0,0 +1,38 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * A8, PCB HM-MiFiB-V18. The closest stock MTP DTB has the same 885
++ * nodes as V12; only the GC9107 init sequence and L6 flags differ.
++ * See Docs/MIFIB_V18/README.md for evidence and unverified hardware.
++ */
++#include "msm8916-generic-mifib-v12.dts"
++
++/ {
++	model = "A8 (HM-MiFiB-V18)";
++	compatible = "mifib-v18,generic", "qcom,msm8916";
++};
++
++/* Match the stock 1.8 V rail even while display support is absent. */
++&pm8916_l6 {
++	regulator-boot-on;
++	regulator-always-on;
++};
++
++/*
++ * V12's lamp mapping was measured on an LED panel. A8 has an LCD;
++ * leave those unverified outputs unclaimed. Keep the stock SIM pulse.
++ */
++&{/leds} {
++	/delete-node/ led-wlan-green;
++	/delete-node/ led-wwan-green;
++	/delete-node/ led-wlan-red;
++	/delete-node/ led-wwan-red;
++	/delete-node/ led-bat-red;
++	/delete-node/ led-bat-green;
++	/delete-node/ led-batl3;
++	/delete-node/ led-batl4;
++	/delete-node/ led-ftest;
++};
++
++&gpio_leds_default {
++	pins = "gpio114";
++};

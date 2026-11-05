@@ -231,9 +231,9 @@ board_token() {
 # Like find_image but silent when absent (the recovery image only exists for
 # boards whose GPT has the 'recovery' partition).
 #
-# The board token is preferred so that a directory holding several boards'
-# recovery images can never flash the wrong one; an unqualified match is only
-# accepted when it is unambiguous. Legacy '*DIAG*' boot-images from build
+# A known board must match the filename; never fall back to another board's
+# sole image. An unqualified match requires an unknown board and one candidate.
+# Legacy '*DIAG*' boot-images from build
 # output directories are always excluded.
 find_optional_image() {  # $1=dir  $2=pattern  [$3=exact filename]
     local dir="$1" pattern="$2" exact="${3:-}" token candidates
@@ -252,9 +252,12 @@ find_optional_image() {  # $1=dir  $2=pattern  [$3=exact filename]
         candidates=$(find "$dir" -maxdepth 1 -type f -name "$pattern" \
                           -iname "*${token}*" ! -iname '*diag*' 2>/dev/null | sort)
         if [[ -n "$candidates" ]]; then
-            printf '%s\n' "$candidates" | head -n 1
+            [[ "$(printf '%s\n' "$candidates" | grep -c .)" == 1 ]] || \
+                die "multiple recovery images match '$token'; keep one or use the exact release filename '$exact'"
+            printf '%s\n' "$candidates"
             return 0
         fi
+        return 0
     fi
 
     candidates=$(find "$dir" -maxdepth 1 -type f -name "$pattern" \
@@ -299,6 +302,10 @@ detect_images_migrate() {
     recovery_path=$(find_optional_image "." "*recovery*.img" "recovery-${BOARD_TOKEN}.img")
 
     read_tot_sectors
+
+    if gpt_has_partition "$gpt_path" recovery && [[ -z "$recovery_path" ]]; then
+        die "target GPT requires recovery-<board>.img; no matching recovery image was found. Refusing migration before any writes."
+    fi
 
     echo "[+] GPT:      $(basename "$gpt_path") (${TOT_SECTORS} sectors)"
     echo "[+] Boot:     $(basename "$boot_path")"
@@ -482,12 +489,35 @@ saved_backup_complete() {
     return 0
 }
 
+# Require an exact GPT length; an unknown or truncated radio read is unsafe.
+radio_partition_size() {
+    local len size
+    len="$(gpt_field "$1" Length)"
+    [[ "$len" =~ ^[0-9a-fA-F]{1,16}$ ]] || die "missing/invalid GPT length for '$1'"
+    size=$((16#$len))
+    (( size > 0 )) || die "zero GPT length for '$1'"
+    printf '%s\n' "$size"
+}
+
+check_radio_backup_sizes() {
+    local n size actual
+    for n in fsc fsg modemst1 modemst2 modem persist sec; do
+        size="$(radio_partition_size "$n")" || return 1
+        [[ -f "saved/$n.bin" ]] || die "missing backup saved/$n.bin"
+        actual=$(wc -c < "saved/$n.bin")
+        (( actual == size )) || die "saved/$n.bin has $actual bytes; GPT requires $size. Refusing to continue."
+    done
+}
+
 # Back up the device-unique radio/calibration partitions. This runs BEFORE any
 # write, so if any single backup fails we abort with the device completely
-# untouched. Each read is validated (exit code AND a non-empty file) so a
-# "successful" but empty/truncated read can never slip through to the restore
-# step after the eMMC has been repartitioned.
+# untouched. Require exact GPT sizes and a second matching read before using
+# either a new backup or a saved one from an earlier run.
 backup_radio() {
+    local n tmp size actual
+    for n in fsc fsg modemst1 modemst2 modem persist sec; do
+        radio_partition_size "$n" >/dev/null || return 1
+    done
     mkdir -p saved
     echo
     echo "=== Partition Backup (EDL) ==="
@@ -505,7 +535,9 @@ backup_radio() {
             for k in fsc fsg modemst1 modemst2 modem persist sec; do
                 printf '    %-9s %12s bytes\n' "$k" "$(wc -c < "saved/$k.bin")"
             done
-            echo "    (pass --refresh-backup to re-read them from the device)"
+            check_radio_backup_sizes
+            verify_radio_restore
+            echo "    Existing backups match this device; no files were replaced."
             return 0
         fi
         local keep="saved.old.$(date +%Y%m%d-%H%M%S)"
@@ -519,7 +551,6 @@ backup_radio() {
         mkdir -p saved
     fi
 
-    local n tmp
     for n in fsc fsg modemst1 modemst2 modem persist sec; do
         echo "[*] Backing up $n..."
         tmp="saved/$n.bin.new"
@@ -530,9 +561,11 @@ backup_radio() {
     No changes have been made to the device - nothing was repartitioned or flashed.
     Fix the EDL connection and run the script again."
         fi
-        if [[ ! -s "$tmp" ]]; then
+        size="$(radio_partition_size "$n")" || return 1
+        actual=$(wc -c < "$tmp" 2>/dev/null) || actual=0
+        if (( actual != size )); then
             rm -f "$tmp"
-            die "BACKUP FAILED for '$n' (the backup file is empty or was not created).
+            die "BACKUP FAILED for '$n' ($actual bytes read; GPT requires $size).
     Refusing to repartition without a valid backup.
     No changes have been made to the device - nothing was repartitioned or flashed.
     Fix the EDL connection and run the script again."
@@ -540,18 +573,20 @@ backup_radio() {
         mv -f "$tmp" "saved/$n.bin"
         echo "    -> saved/$n.bin ($(wc -c < "saved/$n.bin") bytes)"
     done
+    check_radio_backup_sizes
+    verify_radio_restore
     echo "[+] Backup complete: all 7 partitions saved to ./saved/"
 }
 
-# Read the small radio partitions back and compare them with the backup.  A
-# silently truncated write is exactly what leaves a device with a corrupt
-# modemst2 (no IMEI, modem detached), so this is worth the extra EDL sessions.
-# Only the small partitions are read back - modem (64 MiB) and persist (32 MiB)
-# would double the flash time for little gain.
+# Compare every byte, including modem/persist. Read errors must abort too.
+# With arguments, check each restored partition before the next write.
 verify_radio_restore() {
     local n tmp bad=0
-    echo "[*] Verifying the restored partitions (read-back)..."
-    for n in fsc fsg modemst1 modemst2 sec; do
+    if (( $# == 0 )); then
+        set -- fsc fsg modemst1 modemst2 modem persist sec
+    fi
+    echo "[*] Verifying radio partitions against ./saved/ (read-back)..."
+    for n in "$@"; do
         tmp=$(mktemp)
         if edl r "$n" "$tmp" >/dev/null 2>&1; then
             if cmp -s "$tmp" "saved/$n.bin"; then
@@ -561,15 +596,16 @@ verify_radio_restore() {
                 bad=1
             fi
         else
-            echo "    [!] could not read '$n' back (skipped)"
+            echo "    [READ FAILED] $n" >&2
+            bad=1
         fi
         rm -f "$tmp"
     done
     if (( bad )); then
-        die "read-back verification FAILED - the restored data does not match ./saved/.
-    Do not boot this device yet.  Re-enter EDL and rewrite the partition(s)
-    reported as MISMATCH with:
-        edl w <partition> saved/<partition>.bin"
+        die "radio verification FAILED: a read failed or data differs from ./saved/.
+    No further writes or reboot will be attempted. Keep ./saved/ unchanged.
+    Before migration, this can mean the backup belongs to another unit or is stale.
+    After an interrupted migration, stay in EDL and recover using this unit's known-good backup."
     fi
     echo "[+] Read-back verification passed"
 }
@@ -577,27 +613,11 @@ verify_radio_restore() {
 restore_radio() {
     echo
     echo "=== Partition Restoration (EDL) ==="
-    local n len fsz attempt ok
+    local n attempt ok
 
     # Pre-flight 1: never start restoring unless every backup is present, so we
     # cannot half-restore and leave the radio partitions inconsistent.
-    for n in fsc fsg modemst1 modemst2 modem persist sec; do
-        [[ -s "saved/$n.bin" ]] || die "missing backup file saved/$n.bin - refusing to restore"
-    done
-
-    # Pre-flight 2: every backup must fit the partition in the CURRENT GPT.
-    # This catches a ./saved/ that was taken from a different layout before a
-    # single byte is written.
-    for n in fsc fsg modemst1 modemst2 modem persist sec; do
-        len=$(gpt_field "$n" Length)
-        [[ -n "$len" ]] || continue
-        fsz=$(wc -c < "saved/$n.bin")
-        if (( fsz > 0x$len )); then
-            die "saved/$n.bin is $fsz bytes but the '$n' partition is only $(( 0x$len )) bytes.
-    That backup does not belong to this partition layout - refusing to write it.
-    Nothing has been changed on the device."
-        fi
-    done
+    check_radio_backup_sizes
 
     # A write can drop the EDL session (the device resets and comes back in
     # Sahara error state).  Retry, and if it still fails print an exact recipe
@@ -627,9 +647,9 @@ restore_radio() {
       4) ./<this>-flash.sh --mode update --erase-config --yes
          # flashes boot + rootfs + recovery and wipes rootfs_data"
         fi
+        verify_radio_restore "$n"
     done
-    echo "[+] All 7 radio partitions restored"
-    verify_radio_restore
+    echo "[+] All 7 radio partitions restored and verified"
 }
 
 # Sanitize a device name into a safe filename component (letters, digits, . _ -).
@@ -801,10 +821,103 @@ encourage_backup() {
     [[ "$reply" =~ ^[Yy]$ ]] || { echo "[!] Aborted - make a backup first."; exit 0; }
 }
 
+# Check the complete target table before any GPT write. In migrate mode the
+# radio partitions may move, but their full backups must fit exactly. A plain
+# repartition must not move any radio/boot partition. After writing, require
+# EDL's partition-name lookups to match the target before using them.
+validate_radio_target() {
+    require_cmd python3
+    local n
+    local -a layout=()
+    for n in fsc fsg modemst1 modemst2 modem persist sec hyp rpm sbl1 tz aboot boot rootfs rootfs_data misc recovery; do
+        layout+=("$n:$(gpt_field "$n" Offset):$(gpt_field "$n" Length)")
+    done
+    python3 - "$gpt_path" "$1" "${layout[@]}" <<'PY' || die "GPT/radio preflight failed; no further writes or reboot will be attempted"
+from pathlib import Path
+import struct, sys, zlib
+
+def fail(message):
+    sys.exit("GPT/radio preflight: " + message)
+
+data = Path(sys.argv[1]).read_bytes()
+if len(data) != 67 * 512:
+    fail("expected a 67-sector gpt_both0.bin")
+
+def header(offset):
+    h = bytearray(data[offset:offset + 512])
+    size, crc = struct.unpack_from("<II", h, 12)
+    if h[:8] != b"EFI PART" or not 92 <= size <= 512:
+        fail("invalid GPT header")
+    h[16:20] = bytes(4)
+    if zlib.crc32(h[:size]) != crc:
+        fail("GPT header CRC mismatch")
+    return h
+
+primary, backup = header(512), header(66 * 512)
+count, stride, crc = struct.unpack_from("<III", primary, 80)
+if (count, stride) != (128, 128) or struct.unpack_from("<Q", primary, 72)[0] != 2:
+    fail("unexpected GPT entry layout")
+entries = data[2 * 512:34 * 512]
+if zlib.crc32(entries) != crc or data[34 * 512:66 * 512] != entries:
+    fail("GPT entry CRC/copy mismatch")
+last_lba = struct.unpack_from("<Q", primary, 32)[0]
+if (struct.unpack_from("<QQ", backup, 24) != (last_lba, 1)
+        or struct.unpack_from("<Q", backup, 72)[0] != last_lba - 32
+        or struct.unpack_from("<III", backup, 80) != (count, stride, crc)):
+    fail("inconsistent backup GPT")
+first, last = struct.unpack_from("<QQ", primary, 40)
+if first < 34 or last > last_lba - 33 or struct.unpack_from("<Q", primary, 24)[0] != 1:
+    fail("partition bounds overlap GPT metadata")
+target, ranges = {}, []
+for i in range(count):
+    e = entries[i * stride:(i + 1) * stride]
+    if e[:16] == bytes(16):
+        continue
+    name = e[56:128].decode("utf-16le").split("\0", 1)[0]
+    start, end = struct.unpack_from("<QQ", e, 32)
+    if not name or name in target or not first <= start <= end <= last < last_lba:
+        fail("invalid/duplicate partition or bounds: " + name)
+    target[name] = (start * 512, (end - start + 1) * 512)
+    ranges.append((start, end))
+if any(a[1] >= b[0] for a, b in zip(sorted(ranges), sorted(ranges)[1:])):
+    fail("overlapping target partitions")
+current = {}
+for arg in sys.argv[3:]:
+    name, offset, length = arg.split(":")
+    if offset and length:
+        current[name] = (int(offset, 16), int(length, 16))
+radio = "fsc fsg modemst1 modemst2 modem persist sec".split()
+if any(name not in target for name in radio + "hyp rpm sbl1 tz aboot boot rootfs rootfs_data".split()):
+    fail("target is missing required radio/boot partitions")
+mode = sys.argv[2]
+if mode == "migrate":
+    for name in radio:
+        if name not in target or name not in current or target[name][1] != current[name][1]:
+            fail("radio size/mapping missing or changed: " + name)
+        p = Path("saved") / (name + ".bin")
+        if not p.is_file() or p.stat().st_size != target[name][1]:
+            fail("backup size does not match target: " + name)
+elif mode in ("repartition", "current"):
+    for name, region in target.items():
+        if mode == "repartition" and name in ("rootfs_data", "misc", "recovery"):
+            if name == "rootfs_data" and (name not in current or current[name][0] != region[0]
+                                          or current[name][1] < region[1]):
+                fail("repartition would move/expand rootfs_data")
+            continue
+        if current.get(name) != region:
+            fail("device/target mapping differs: " + name)
+    if any(name not in target for name in radio):
+        fail("target is missing radio partitions")
+else:
+    fail("unknown validation mode")
+PY
+}
+
 # Flash the new GPT via raw sector writes first, so all subsequent flashes use
 # the correct partition offsets from the OpenWrt GPT.
 # gpt_both0.bin layout: [34 sectors primary] [32 sectors backup entries] [1 sector backup header]
 flash_gpt() {
+    validate_radio_target "$MODE"
     echo
     echo "=== Flashing GPT (EDL) ==="
     gpt_tmp="$(mktemp -d)"
@@ -937,14 +1050,14 @@ do_migrate() {
     # below (misc zeroing, recovery flash, rootfs_data wipe) resolve against
     # the NEW layout, not the pre-flash (Android) dump.
     GPT_DUMP="$(edl printgpt 2>&1)" || die "re-reading the GPT after repartition"
+    validate_radio_target current
     zero_misc
     flash_bootloader
     # Restore the device-unique radio/calibration partitions BEFORE writing the
     # OpenWrt boot/rootfs images.  These blobs (modem firmware, NV/EFS, fsg, ...)
     # are what make the modem work, so they are put back first: if a restore fails
-    # we abort while the boot/rootfs partitions still hold their previous (working)
-    # content, and the large boot/rootfs writes can never leave the device with a
-    # half-restored radio (modem offline / NV missing).
+    # stop before the large image writes. The layout/bootloader have changed
+    # already at this point, so an interrupted migration is not bootable stock.
     restore_radio
     flash_boot_rootfs
     flash_recovery required
@@ -990,6 +1103,7 @@ do_repartition() {
     # resolve against the NEW layout.  The pre-flash dump describes the old one,
     # whose rootfs_data runs ~17 MB past the new end.
     GPT_DUMP="$(edl printgpt 2>&1)" || die "re-reading the GPT after repartition"
+    validate_radio_target current
     if ! grep -qw misc <<<"$GPT_DUMP" || ! grep -qw recovery <<<"$GPT_DUMP"; then
         die "the device GPT has no misc/recovery after the rewrite - it did not
     take effect. The device still boots normally; re-run the script."
@@ -1038,4 +1152,6 @@ main() {
     esac
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi

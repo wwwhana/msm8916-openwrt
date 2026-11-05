@@ -1,5 +1,9 @@
 # Battery, charge limit and battery LEDs
 
+The experimental [A8 / HM-MiFiB-V18 port](MIFIB_V18/README.md) inherits V12's
+4.2 V / 2150 mAh stock profile. The fitted cell capacity and charging behaviour
+are unverified; V12's lamp outputs are not enabled on this LCD board.
+
 Two boards carry a Li-ion pack: **mifib-v12** (4.2 V / 2150 mAh) and **mf800b**
 (4.35 V / 2100 mAh).  Everything battery-related ships in one package,
 [`packages/luci-app-battery`](../packages/luci-app-battery/), which only those

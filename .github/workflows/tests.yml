@@ -35,11 +35,14 @@ jobs:
           # board-profile compares the pull request against its base branch.
           fetch-depth: 0
 
-      # Hardware-free tests: no modem, no root, no OpenWrt. Each suite is a
-      # tests/<name>/run.sh that exits non-zero on failure. --self-check also
-      # applies mutants and requires each one to be caught.
+      # Hardware-free tests: no modem, no root, no OpenWrt. Each shell suite
+      # exits non-zero on failure. --self-check also applies
+      # mutants and requires each one to be caught; flash-radio uses unittest.
       - name: himi-ok-guard
         run: bash tests/himi-ok-guard/run.sh --self-check
+
+      - name: flash-radio
+        run: python3 tests/flash-radio/test_flash_radio.py
 
       - name: board-profile
         env:

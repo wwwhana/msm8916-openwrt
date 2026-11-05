@@ -4,7 +4,8 @@ name: Board Build
 # machine" stops being the only evidence.  Opt-in per pull request with the
 # `board-build` label: one board is ~40 minutes, and most pull requests do not
 # need it.  Nothing is published and no secret is used - a pull request from a
-# fork gets a throwaway signing key and the artifact is discarded.
+# fork gets a throwaway signing key and the artifact is discarded. Manual
+# dispatches retain experimental images for inspection, without a release.
 
 on:
   pull_request:
@@ -109,6 +110,22 @@ jobs:
 
       - name: Build ${{ matrix.device }}
         run: ./build.sh build "${{ matrix.device }}"
+
+      - name: Upload manual test build
+        if: github.event_name == 'workflow_dispatch' && success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: experimental-${{ matrix.device }}-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            openwrt/bin/targets/msm89xx/msm8916/*-squashfs-gpt_both0.bin
+            openwrt/bin/targets/msm89xx/msm8916/*-squashfs-boot.img
+            openwrt/bin/targets/msm89xx/msm8916/*-squashfs-system.img
+            openwrt/bin/targets/msm89xx/msm8916/*-squashfs-sysupgrade.bin
+            openwrt/bin/targets/msm89xx/msm8916/*-squashfs-flash.sh
+            openwrt/bin/targets/msm89xx/msm8916/*-squashfs-firmware.zip
+            openwrt/bin/targets/msm89xx/msm8916/*.manifest
 
       - name: Report
         if: always()

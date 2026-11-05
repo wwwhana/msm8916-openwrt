@@ -1,5 +1,10 @@
 # Recovery: the rescue image and the recovery partition
 
+The experimental **A8 / HM-MiFiB-V18** profile also reserves `misc` and
+`recovery`, but has no verified rescue image yet. Build it from V18's own
+production kernel, matching modules and calibration; do not reuse a V12
+frozen image. See [the V18 installation constraints](../MIFIB_V18/README.md#installation-and-recovery-constraints).
+
 There are **two** separate rescue mechanisms on these sticks, and they are easy
 to confuse:
 

@@ -6,6 +6,8 @@ This directory contains comprehensive documentation on hardware reboot modes (PB
 
 ## Master Documentation Index
 
+- [A8 / HM-MiFiB-V18 radio preservation](../MIFIB_V18/README.md#radio-data-preservation): Android/OpenWrt partition offsets, mandatory backup and verification, and hardware-free migration failure tests. A8 installation remains unverified.
+
 - [**MSM8916 Reboot-to-EDL Complete Implementation Guide**](MSM8916_Reboot_to_EDL_Complete_Implementation_Guide.md): The definitive guide covering reverse engineering of IMEM cookies, kernel restart handlers, two-tier userspace orchestrator, normal reboot `umount-overlay` clean unmount fix, and live hardware test results.
 
 ---
