@@ -6,8 +6,10 @@ with an LCD and PCB marking **HM-MiFiB-V18**. The build target is
 compatible is `mifib-v18,generic`. A8 is a sales name; this target does not
 cover every product sold under that name.
 
-**Status:** the complete OpenWrt build and offline image inspection passed.
-Board support is ready for hardware testing. An OpenWrt boot, cellular
+**Status:** the complete OpenWrt build, offline inspection and EDL installation
+passed. All 20 final device read-back checks matched, including all seven radio
+partitions. USB did not reappear after the first software reset; a physical
+cold boot is pending. An OpenWrt boot, cellular
 connection, charging test and recovery test on this A8 have not been verified.
 V12's feature matrix does not establish working features on V18.
 
@@ -340,7 +342,9 @@ device and perform no real EDL operations. They are also included in CI.
 | Actual generated GPT with the installer's radio preflight | Passed against original A8 layout metadata and sparse files; all seven radio lengths preserved, `modemst2` moves to partition 5 at LBA 141314 |
 | Private V18 recovery build and offline inspection | Passed; production kernel and eight matching modules, this unit's firmware/NV, initramfs contents and userspace library checks; 11.36 MiB image |
 | Combined local bundle with the real installer | Correct V18 GPT, boot, system and private recovery files selected; radio preflight passed against original GPT metadata and actual local `saved/` file lengths, with device access blocked |
-| Device boot, USB network, Wi-Fi, LTE traffic | Not run |
+| EDL installation on this A8 | Passed: original device GPT and all seven live radio files matched the backup; 20 write commands completed; a final 20-region read-back matched GPT, boot chain, boot/rootfs/recovery, cleared regions and all seven radio backups before reset |
+| First software reset after installation | Reset command succeeded; USB network/console did not reappear during the initial observation; physical cold boot pending, OpenWrt boot unconfirmed |
+| Wi-Fi, Bluetooth, LTE traffic | Not run |
 | Charging, temperature, reset/recovery, cold boots, traffic soak | Not run |
 | LCD, removable SD, WPS and SIM hot-swap | Unverified; LCD/SD/WPS support not enabled |
 
