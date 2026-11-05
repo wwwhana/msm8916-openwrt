@@ -15,6 +15,12 @@ spec.loader.exec_module(panel)
 
 
 class PanelTests(unittest.TestCase):
+    def test_display_package_can_be_selected(self):
+        # OpenWrt propagates the DRM packages' @DISPLAY_SUPPORT dependency
+        # to a8-display, removing it entirely when this option is missing.
+        config = (ROOT / 'diffconfigs/mifib-v18').read_text().splitlines()
+        self.assertIn('CONFIG_DISPLAY_SUPPORT=y', config)
+
     def test_stock_sequence(self):
         stock = bytes.fromhex((PACKAGE / "files/stock-init.hex").read_text())
         self.assertEqual(len(stock), 140)

@@ -307,6 +307,11 @@ APN/authentication/IP settings under Network → Interfaces; the second reads
 the SIM's home operator and applies an APN from its TSV tables. Its shipped
 table has no Korean entries, so its generic fallback is insufficient here.
 
+The V18 diffconfig explicitly enables `CONFIG_DISPLAY_SUPPORT=y`: OpenWrt
+propagates this prerequisite from DRM to `a8-display`; omitting it silently
+removes the display package during configuration. The panel package brings
+in framebuffer console support and the 8x16 font through `kmod-fb`.
+
 The V18 profile adds `a8-apn`, a profile UI and offline database extension
 for **the existing `qcom-carrier-autocfg` daemon**. There is no second APN
 daemon. Other boards retain their original provisioning path. On V18 the
@@ -359,6 +364,27 @@ Run `python3 tests/a8-apn/test_apn.py` and
 `python3 tests/a8-display/test_display.py`. The Lua selection checks run
 when an interpreter is available; database and integration checks always run.
 Actual SIM/APN switching, data connectivity and SMS reception remain unverified.
+
+## Bluetooth and USB host limits
+
+The installed baseline contains BlueZ 5.83, `bluetoothctl`, the Qualcomm
+SMD driver and `kmod-bluetooth`. The baseline rootfs was inspected and
+contains `bnep.ko`, so the PAN kernel component is present. Actual controller
+detection, radio operation and pairing on this A8 remain unverified.
+`bt-spp` configures a serial shell; it is not an Internet sharing service.
+BlueZ supports NAP (share A8's Internet) and PANU (use a phone's tethering),
+but neither PAN networking role is configured here. A pairing UI alone does
+not configure the network bridge, DHCP or firewall. The external
+`sbwml/luci-app-bluetooth` package is not included; its default dependencies
+also include audio packages. OpenWrt's `bluez-tools` package installs only
+`bt-agent`, not the upstream `bt-network` utility.
+
+V18 inherits `dr_mode = "peripheral"` from V12. USB Ethernet host drivers
+are absent from the installed baseline. A wired-uplink Wi-Fi AP would
+require working USB host mode, adapter power, the matching driver and a
+WAN interface. The connector's host-role wiring, 5 V output and concurrent
+charging are unverified; changing the device tree alone is not proof of OTG
+support. This build retains the USB device role used by NCM/ACM/ADB.
 
 ## Installation and recovery constraints
 

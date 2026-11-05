@@ -43,6 +43,7 @@ CONFIG_PACKAGE_kmod-veth=m
 CONFIG_PACKAGE_kmod-vxlan=m
 CONFIG_PCRE2_JIT_ENABLED=y
 CONFIG_TARGET_msm89xx=y
+CONFIG_DISPLAY_SUPPORT=y
 CONFIG_TARGET_msm89xx_msm8916=y
 CONFIG_TARGET_msm89xx_msm8916_DEVICE_generic-mifib-v18=y
 # Failsafe mode: 7 s preinit window (single button press) + the preinit
