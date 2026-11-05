@@ -234,6 +234,10 @@ install_package_patches() {
 
         [ -d "$pkg/patches" ] || continue
 
+        # Complete project packages keep their own patches; package.mk applies
+        # these while preparing that package's source, not package/system/.
+        [ ! -f "$pkg/Makefile" ] || continue
+
         pkg="$(basename "$pkg")"
 
         [ -d "$OPENWRT_DIR/package/system/$pkg" ] || {

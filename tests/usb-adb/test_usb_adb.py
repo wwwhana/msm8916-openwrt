@@ -12,6 +12,39 @@ SOURCE = (ROOT / 'packages/uci-usb-gadget/files/usb-gadget.sh').read_text()
 FUNCTIONS = SOURCE.split('case "${1:-}" in\n', 1)[0].replace('. /lib/functions.sh', ':')
 
 
+class PackagePrepareTests(unittest.TestCase):
+    def prepare(self, custom=False, target=True):
+        source = (ROOT / 'scripts/openwrt-prepare.sh').read_text()
+        body = source.split('install_package_patches() {', 1)[1].split('\n}\n', 1)[0]
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            package = base / 'packages/example'
+            (package / 'patches').mkdir(parents=True)
+            (package / 'patches/test.patch').write_text('package patch')
+            if custom:
+                (package / 'Makefile').write_text('complete custom package')
+            dest = base / 'openwrt/package/system/example'
+            if target:
+                (dest / 'patches').mkdir(parents=True)
+                (dest / 'patches/stale.patch').touch()
+            script = '''die() { echo "$*" >&2; exit 1; }
+info() { :; }
+PACKAGES_DIR="$1/packages"
+OPENWRT_DIR="$1/openwrt"
+install_package_patches() {\n''' + body + '\n}\ninstall_package_patches\n'
+            run = subprocess.run(['bash', '-c', script, 'prepare-test', str(base)], capture_output=True)
+            return run.returncode, (dest / 'patches/test.patch').exists(), (dest / 'patches/stale.patch').exists()
+
+    def test_complete_package_keeps_its_own_patches(self):
+        self.assertEqual(self.prepare(custom=True, target=False), (0, False, False))
+
+    def test_patch_only_overlay_is_still_installed(self):
+        self.assertEqual(self.prepare(), (0, True, False))
+
+    def test_missing_overlay_target_still_fails(self):
+        self.assertNotEqual(self.prepare(target=False)[0], 0)
+
+
 class GadgetTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix='usb adb ')
