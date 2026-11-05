@@ -8,9 +8,11 @@ cover every product sold under that name.
 
 **Status:** the complete OpenWrt build, offline inspection and EDL installation
 passed. All 20 final device read-back checks matched, including all seven radio
-partitions. USB did not reappear after the first software reset; a physical
-cold boot is pending. An OpenWrt boot, cellular
-connection, charging test and recovery test on this A8 have not been verified.
+partitions. The user subsequently reported running OpenWrt at `192.168.8.1`.
+Agent SSH access to that address timed out, so console inspection remains
+pending. Cellular operation, charging and recovery on this A8 have not been
+verified. LCD and USB ADB support are implemented below and await a new
+firmware build and device tests.
 V12's feature matrix does not establish working features on V18.
 
 ## Documentation reviewed before implementation
@@ -261,6 +263,42 @@ For an A8 already running this OpenWrt layout, this is a boot/rootfs update;
 do not repeat GPT migration or radio/bootloader writes to add the display.
 Run `python3 tests/a8-display/test_display.py` for the hardware-free checks.
 
+## USB ADB
+
+The first installed image configured USB NCM networking and an ACM serial
+console but did not contain `adbd`. The V18 profile now includes the
+`adbd` package alongside `a8-display`. The kernel already selects
+`CONFIG_USB_CONFIGFS_F_FS`; the package also selects the FunctionFS module.
+
+The daemon is built from pinned AOSP 34.0.5 source, using the Linux/musl
+adaptation credited in [the package notes](../../packages/adbd/README.md).
+The existing gadget manager adds `ffs.adb` to the same gadget as NCM/ACM.
+It waits for both FunctionFS data endpoints before binding USB, falls back
+to network/serial if ADB fails, and watches for a gadget unbound by a cable
+reset or daemon restart. Start/stop and reconnect share a lock.
+
+On V18, a one-time defaults script enables ADB even when upgrading with the
+old USB configuration preserved. An existing explicit ADB setting is kept.
+The default is **USB root access without a host-key prompt** (`auth=open`).
+No TCP/vsock listener is compiled into the Linux startup path. For host-key
+authentication or disabling ADB, see the package notes; no host private key
+or device-specific key is included in the image or repository.
+
+After installing this update and reconnecting a data-capable USB cable:
+
+```sh
+adb devices
+adb shell id
+adb shell 'cat /tmp/sysinfo/board_name'
+adb shell 'logread -e adbd'
+```
+
+Expected results are a device entry, `uid=0(root)` and the V18 board name.
+ADB shell/file transfer, unplug/replug, simultaneous NCM/ACM and visible LCD
+output remain **unverified on this device**. This update uses the normal
+boot/rootfs update path; adding ADB does not require changing GPT, the
+bootloader, recovery or any radio/NV partition.
+
 ## Installation and recovery constraints
 
 **Android and OpenWrt use different partition layouts.** Android's `boot` is
@@ -411,10 +449,13 @@ device and perform no real EDL operations. They are also included in CI.
 | Private V18 recovery build and offline inspection | Passed; production kernel and eight matching modules, this unit's firmware/NV, initramfs contents and userspace library checks; 11.36 MiB image |
 | Combined local bundle with the real installer | Correct V18 GPT, boot, system and private recovery files selected; radio preflight passed against original GPT metadata and actual local `saved/` file lengths, with device access blocked |
 | EDL installation on this A8 | Passed: original device GPT and all seven live radio files matched the backup; 20 write commands completed; a final 20-region read-back matched GPT, boot chain, boot/rootfs/recovery, cleared regions and all seven radio backups before reset |
-| First software reset after installation | Reset command succeeded; USB network/console did not reappear during the initial observation. The user subsequently reported running OpenWrt; agent console verification is pending a connection address. |
+| First software reset after installation | Reset command succeeded; USB network/console did not reappear during the initial observation. The user subsequently reported running OpenWrt at `192.168.8.1`; agent SSH access timed out, so console inspection remains pending. |
 | Wi-Fi, Bluetooth, LTE traffic | Not run |
 | Charging, temperature, reset/recovery, cold boots, traffic soak | Not run |
 | LCD source and initialization checks | Seven tests passed on macOS; standalone Linux 6.12.112 DTB compile passed; display-enabled full build and actual pixels pending |
+| USB ADB source checks | Nine startup/reconnect/fallback/default-setting checks passed on macOS and Alpine BusyBox ash; board harness with self-check: 56 passed, 0 failed, 3 skipped |
+| Standalone USB adbd build | AOSP daemon and bundled libraries compiled and linked on ARM64 Alpine/musl; missing FunctionFS exits with an error. Ubuntu 22.04 host Go 1.18 generates the same BoringSSL error table. This is not an OpenWrt firmware build or device connection test. |
+| USB ADB on this A8 | Not run; shell, file transfer and unplug/replug require the new image and an accessible USB connection |
 | Removable SD, WPS and SIM hot-swap | Unverified; SD/WPS support not enabled |
 
 The actual production DTB is 54,998 bytes, SHA-256

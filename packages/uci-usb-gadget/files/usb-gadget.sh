@@ -29,6 +29,12 @@ CFG_ECM=""
 CFG_NCM=""
 CFG_ACM=""
 CFG_UMS=""
+CFG_ADB=""
+
+ADB_FFS=/dev/usb-ffs/adb
+ADB_READY=/var/run/usb-gadget-adb.udc
+ADB_SERVICE=/etc/init.d/adbd
+GADGET_LOCK=/var/run/usb-gadget.lock
 
 CFG_ACM_SHELL=""
 
@@ -64,6 +70,7 @@ load_config() {
     config_get_bool CFG_NCM ncm enabled 0
     config_get_bool CFG_ACM acm enabled 0
     config_get_bool CFG_UMS ums enabled 0
+    config_get_bool CFG_ADB adb enabled 0
     
     # ACM options
     config_get_bool CFG_ACM_SHELL acm shell 1
@@ -145,6 +152,97 @@ sysfs_write() {
 # ============================================================================
 # USB Functions Setup
 # ============================================================================
+
+# The reconnect watcher and start/stop must never change configfs together.
+lock_gadget() {
+    local owner tries=0
+    until mkdir "$GADGET_LOCK" 2>/dev/null; do
+        owner="$(cat "$GADGET_LOCK/pid" 2>/dev/null || true)"
+        if [ -n "$owner" ] && ! kill -0 "$owner" 2>/dev/null; then
+            rm -f "$GADGET_LOCK/pid"
+            rmdir "$GADGET_LOCK" 2>/dev/null || true
+            continue
+        fi
+        [ "${1:-}" != try ] || return 1
+        tries=$((tries + 1))
+        [ "$tries" -lt 100 ] || error "USB gadget is busy"
+        sleep 0.1
+    done
+    echo "$$" > "$GADGET_LOCK/pid"
+    trap 'rm -f "$GADGET_LOCK/pid"; rmdir "$GADGET_LOCK" 2>/dev/null || true' EXIT
+    trap 'exit 1' INT TERM
+}
+
+stop_adb() {
+    rm -f "$ADB_READY"
+    if [ -x "$ADB_SERVICE" ]; then
+        "$ADB_SERVICE" stop || true
+    fi
+    if mountpoint -q "$ADB_FFS"; then
+        local tries=0
+        until umount "$ADB_FFS" 2>/dev/null; do
+            tries=$((tries + 1))
+            [ "$tries" -lt 50 ] || return 1
+            sleep 0.1
+        done
+    fi
+    rmdir "$ADB_FFS" 2>/dev/null || true
+}
+
+setup_adb() {
+    [ -x "$ADB_SERVICE" ] || return 1
+    modprobe usb_f_fs 2>/dev/null || true
+    mkdir -p "${CFG_FUNCTIONS_PATH}/ffs.adb" "$ADB_FFS" || return 1
+    mountpoint -q "$ADB_FFS" || mount -t functionfs adb "$ADB_FFS" || return 1
+    "$ADB_SERVICE" start || return 1
+    local tries=0
+    while [ "$tries" -lt 50 ]; do
+        if [ -e "$ADB_FFS/ep1" ] && [ -e "$ADB_FFS/ep2" ]; then
+            ln -sf "${CFG_FUNCTIONS_PATH}/ffs.adb" "${CFG_CONFIG_PATH}/" || return 1
+            return 0
+        fi
+        sleep 0.1
+        tries=$((tries + 1))
+    done
+    return 1
+}
+
+restore_usb_network() {
+    local ifname iface
+    for ifname in "${CFG_FUNCTIONS_PATH}"/*/ifname; do
+        [ -f "$ifname" ] || continue
+        iface="$(cat "$ifname")"
+        [ -n "$iface" ] || continue
+        ip link set "$iface" up 2>/dev/null || true
+        ip link set "$iface" master br-lan 2>/dev/null || true
+    done
+}
+
+# Closing FunctionFS ep0 (a disconnect or daemon restart) unbinds configfs.
+# Restore this gadget only; fall back to its network/serial functions if ADB
+# is not ready. The watcher holds the same lock as normal start and stop.
+rebind_adb() {
+    load_config
+    [ "$CFG_ENABLED" = 1 ] && [ "$CFG_ADB" = 1 ] && [ -s "$ADB_READY" ] || return 0
+    [ -d "$CFG_GADGET_PATH" ] || return 0
+    local udc current link="${CFG_CONFIG_PATH}/ffs.adb"
+    udc="$(cat "$ADB_READY")"
+    current="$(cat "${CFG_GADGET_PATH}/UDC")"
+    if [ -n "$current" ] && [ -L "$link" ]; then
+        return 0
+    fi
+    echo "" > "${CFG_GADGET_PATH}/UDC"
+    if [ -e "$ADB_FFS/ep1" ] && [ -e "$ADB_FFS/ep2" ]; then
+        ln -sf "${CFG_FUNCTIONS_PATH}/ffs.adb" "$link"
+        if echo "$udc" > "${CFG_GADGET_PATH}/UDC" 2>/dev/null; then
+            restore_usb_network
+            return 0
+        fi
+    fi
+    rm -f "$link"
+    echo "$udc" > "${CFG_GADGET_PATH}/UDC" 2>/dev/null || log "USB reconnect failed"
+    restore_usb_network
+}
 
 setup_rndis() {
     log "Enabling RNDIS"
@@ -371,6 +469,17 @@ setup_gadget() {
     if [ "$CFG_UMS" = "1" ]; then
         config_string="${config_string}$(setup_ums)"
     fi
+
+    if [ "$CFG_ADB" = 1 ]; then
+        if setup_adb; then
+            config_string="${config_string}+ADB"
+        else
+            log "ADB not ready; continuing with the other USB functions"
+            stop_adb || true
+            rm -f "${CFG_CONFIG_PATH}/ffs.adb"
+            rmdir "${CFG_FUNCTIONS_PATH}/ffs.adb" 2>/dev/null || true
+        fi
+    fi
     
     # Check if any function was enabled
     if [ -z "$config_string" ]; then
@@ -397,7 +506,17 @@ setup_gadget() {
     # Find and enable UDC
     local udc="$(find_udc)"
     log "Enabling UDC: $udc"
-    sysfs_write UDC "$udc"
+    if ! echo "$udc" > UDC 2>/dev/null; then
+        [ -L "${CFG_CONFIG_PATH}/ffs.adb" ] || error "Cannot bind UDC $udc"
+        log "ADB could not bind; keeping network and serial available"
+        rm -f "${CFG_CONFIG_PATH}/ffs.adb"
+        stop_adb || true
+        rmdir "${CFG_FUNCTIONS_PATH}/ffs.adb" 2>/dev/null || true
+        sysfs_write UDC "$udc"
+    fi
+    if [ -L "${CFG_CONFIG_PATH}/ffs.adb" ]; then
+        echo "$udc" > "$ADB_READY"
+    fi
     
     # Configure network
     setup_network
@@ -410,8 +529,11 @@ teardown_gadget() {
     
     # Load config to get paths
     load_config
+
+    rm -f "$ADB_READY"
     
     if [ ! -d "$CFG_GADGET_PATH" ]; then
+        stop_adb || true
         log "Gadget not found, nothing to tear down"
         return
     fi
@@ -437,6 +559,7 @@ teardown_gadget() {
     # Remove configuration links
     rm -f configs/c.1/* 2>/dev/null || true
     rm -f os_desc/c.1 2>/dev/null || true
+    stop_adb || log "Could not unmount ADB FunctionFS"
     rmdir configs/c.1/strings/0x409 2>/dev/null || true
     rmdir configs/c.1 2>/dev/null || true
     
@@ -522,18 +645,31 @@ status() {
 
 case "${1:-}" in
     start)
+        lock_gadget
         teardown_gadget
         setup_gadget
         ;;
     stop)
+        lock_gadget
         teardown_gadget
         ;;
     restart)
+        lock_gadget
         teardown_gadget
         setup_gadget
         ;;
     status)
         status
+        ;;
+    watch-adb)
+        while :; do
+            "$0" rebind-adb || true
+            sleep 2
+        done
+        ;;
+    rebind-adb)
+        lock_gadget try || exit 0
+        rebind_adb
         ;;
     -h|--help)
         cat <<'USAGE'

@@ -164,7 +164,7 @@ define Device/generic-mifib-v18
 	DEVICE_MODEL := A8 (HM-MiFiB-V18)
 	DEVICE_DTS := msm8916-generic-mifib-v18
 	SUPPORTED_DEVICES := mifib-v18,generic
-	DEVICE_PACKAGES += a8-display
+	DEVICE_PACKAGES += a8-display adbd
 endef
 TARGET_DEVICES += generic-mifib-v18
 

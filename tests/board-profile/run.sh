@@ -290,6 +290,15 @@ if [ -f "$ROOT/packages/a8-display/Makefile" ]; then
     fi
 fi
 
+if [ -f "$ROOT/packages/adbd/Makefile" ]; then
+    section "USB ADB"
+    if python3 "$ROOT/tests/usb-adb/test_usb_adb.py"; then
+        ok "USB ADB startup, reconnect and network fallback checks"
+    else
+        bad "USB ADB startup, reconnect or network fallback checks failed"
+    fi
+fi
+
 # ---- self-check ------------------------------------------------------------
 if [ "$SELF_CHECK" -eq 1 ]; then
     section "self-check (mutants caught, valid gates accepted)"

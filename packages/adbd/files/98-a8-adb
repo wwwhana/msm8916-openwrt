@@ -1,0 +1,10 @@
+#!/bin/sh
+# Also runs when upgrading an existing A8, whose USB config is preserved.
+tr '\000' '\n' < /proc/device-tree/compatible | grep -qx 'mifib-v18,generic' || exit 0
+uci -q get usbgadget.adb >/dev/null && exit 0
+uci -q batch <<'EOF'
+set usbgadget.adb=function
+set usbgadget.adb.enabled='1'
+set usbgadget.adb.auth='open'
+commit usbgadget
+EOF
