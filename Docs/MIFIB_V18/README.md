@@ -83,7 +83,7 @@ contains a 512 MB MTP variant with board-id `<8 0x100>`.
 | Reset | Stock DT describes GPIO102, active low. Physical RST behaviour remains untested in OpenWrt. |
 | WPS | Stock DT describes GPIO27, active low. V12's physical WPS button did not produce that GPIO event; A8 wiring is also unverified. No WPS key is enabled here. |
 | SIM | Matching stock description for GPIO119/112/12 selection and GPIO114 re-announce. Registration and hot-swap remain untested. |
-| LCD | Stock DT includes GC9107 and ST7735S descriptions. GC9107 is described as 128×128; the selected panel remains unconfirmed. Reset/DC are described on GPIO11/30. Display support is not implemented. |
+| LCD | The compared MTP DTB prefers the 128×128 GC9107 through `qcom,spi-pref-prim-pan`; it also contains an ST7735S description. SPI5, GPIO11/30 reset/DC, L17/L6 supplies and the MPP4 current sink are described below. Experimental display support is implemented; actual pixels remain unverified. |
 | Wi-Fi bands | The initial mainline description selects `qcom,wcn3620`, inherited from V12. [Linux treats WCN3620 as 2.4 GHz only](https://github.com/torvalds/linux/blob/v6.12/drivers/net/wireless/ath/wcn36xx/main.c#L1345). This is a port configuration, not a physical RF-chip identification or a measured A8 channel list. |
 | Bluetooth | The mainline DT contains the WCNSS Bluetooth device over SMD, and the image includes `btqcomsmd`, `btqca` and BlueZ. The A8 antenna arrangement, controller discovery, scanning and pairing remain unverified. |
 | SD | Eight contact pads and mounting pads below the SIM socket suggest an unpopulated microSD socket. The separate round `D0`–`D3`/`CMD`/`CLK` pads are SD/MMC test points; whether they connect to eMMC or SDC2 is unverified. Stock SDC2 is enabled with a four-bit bus, but that alone does not prove the footprint is wired or supports removable cards. Check continuity, supplies and missing passives before fitting a socket. SDC2 stays disabled here. |
@@ -114,7 +114,8 @@ the PCB, original firmware and runtime observations instead.
 Patch **869** includes `msm8916-generic-mifib-v12.dts` and changes the board
 identity, L6 power policy and unverified lamp outputs. The GPIO114 SIM
 re-announce output remains. V12's status lamp nodes are removed and their pins
-are not claimed by the LED pin group. No LCD or SD driver is enabled.
+are not claimed by the LED pin group. The A8 profile additionally selects
+`a8-display` for the stock SPI LCD. SDC2 remains disabled.
 
 V12's battery, charger, reset key, SIM selection and modem A2 hold are
 inherited. A2 hold is an initial compatibility choice, not an A8 stability
@@ -192,6 +193,73 @@ unit's backup; `aboot` and `hyp` are newly built. The downloaded `tz.mbn` is
 the new 1,048,576-byte partition. Do not write this bundle using the Android
 GPT. Matching entry addresses or fitting the new partitions does not verify
 that this boot chain starts on V18; that hardware check remains outstanding.
+
+## LCD support
+
+The A8 profile uses Linux's existing
+[`panel-mipi-dbi` driver](https://github.com/torvalds/linux/blob/v6.12/drivers/gpu/drm/tiny/panel-mipi-dbi.c)
+and the OpenWrt `kmod-drm-panel-mipi-dbi` package. It does not need the older
+GC9107 driver in `TBR/`. That driver's MF68E initialization, address offsets
+and PWM backlight setup differ from this A8's stock description.
+
+The compared stock DTB establishes the following configuration:
+
+| Signal | Stock setting used in patch 869 |
+| --- | --- |
+| Panel | Preferred GC9107; 128×128, RGB565, address window 0–127 on both axes |
+| SPI | QUP at `0x78b9000`, 16 MHz; GPIO16/17/19 at 12 mA, CS GPIO18 at 2 mA |
+| Reset / data-command | GPIO11 active low / GPIO30 active high; 8 mA drive |
+| Panel / logic supply | L17 at 2.85 V / shared L6 at 1.8 V |
+| Backlight | PM8916 MPP4 current sink, stock maximum 40 mA, manually enabled |
+
+The driver is configured write-only because panel readback wiring is not
+verified. It always resets and initializes the panel. Its standard reset
+pulse is used; it does not reproduce the stock three-element reset timing
+exactly. The 23 mm physical size is display metadata inherited from the TBR
+panel description, not a measurement of this unit.
+
+[`stock-init.hex`](../../packages/a8-display/files/stock-init.hex) is the
+exact 140-byte GC9107 initialization property from the compared A8 stock DTB:
+SHA-256 `b31d68670100454a86e2d4540696da6cfb429aff459b02f3a078ec746ccb5299`.
+[`gen-panel.py`](../../packages/a8-display/gen-panel.py) converts its command
+records into the driver's firmware format at build time. It retains all
+register/gamma/window values and the waits after sleep-out (120 ms) and
+display-on (50 ms). The installed file is
+`/lib/firmware/mifib-v18,gc9107.bin`.
+
+Backlight uses `gpio-backlight` over MPP4 in **sink** mode, with binary on/off
+control. It is not a digital output driving the LED directly. Linux 6.12's
+[`pinctrl-spmi-mpp`](https://github.com/torvalds/linux/blob/v6.12/drivers/pinctrl/qcom/pinctrl-spmi-mpp.c)
+writes `drive-strength` straight to the sink-control register: the DTS value
+`7` encodes the stock 40 mA. `kmod-a8-backlight` enables that MPP controller
+and packages `gpio_backlight.ko`. PWM routing and automatic dimming are not
+implemented in this version.
+
+The `a8-display` service shows battery capacity when available, otherwise
+battery voltage, charging state, Wi-Fi up/down, ModemManager state, LAN IPv4
+address and uptime. Missing readings display `--`; an unavailable capacity
+is never presented as 100%. It refreshes every five seconds plus the time
+needed for bounded status queries. Linux's framebuffer console supplies the
+font and handles framebuffer pixel format and row stride; the service writes
+eight fixed-width rows to `/dev/tty1`. It leaves the serial login available
+and keeps the screen lit. Both service and executable check the A8 board
+identity before running.
+
+After installing a display-enabled build, check:
+
+```sh
+cat /sys/class/graphics/fb0/name
+cat /sys/class/graphics/fb0/virtual_size
+cat /sys/class/backlight/backlight/brightness
+dmesg | grep -E 'mipi.dbi|drm|backlight|mpp|spi'
+/etc/init.d/a8-display restart
+```
+
+Check visible text, orientation, cold boots and power consumption on the
+actual unit. A successful compile does not establish that the LCD works.
+For an A8 already running this OpenWrt layout, this is a boot/rootfs update;
+do not repeat GPT migration or radio/bootloader writes to add the display.
+Run `python3 tests/a8-display/test_display.py` for the hardware-free checks.
 
 ## Installation and recovery constraints
 
@@ -343,10 +411,11 @@ device and perform no real EDL operations. They are also included in CI.
 | Private V18 recovery build and offline inspection | Passed; production kernel and eight matching modules, this unit's firmware/NV, initramfs contents and userspace library checks; 11.36 MiB image |
 | Combined local bundle with the real installer | Correct V18 GPT, boot, system and private recovery files selected; radio preflight passed against original GPT metadata and actual local `saved/` file lengths, with device access blocked |
 | EDL installation on this A8 | Passed: original device GPT and all seven live radio files matched the backup; 20 write commands completed; a final 20-region read-back matched GPT, boot chain, boot/rootfs/recovery, cleared regions and all seven radio backups before reset |
-| First software reset after installation | Reset command succeeded; USB network/console did not reappear during the initial observation; physical cold boot pending, OpenWrt boot unconfirmed |
+| First software reset after installation | Reset command succeeded; USB network/console did not reappear during the initial observation. The user subsequently reported running OpenWrt; agent console verification is pending a connection address. |
 | Wi-Fi, Bluetooth, LTE traffic | Not run |
 | Charging, temperature, reset/recovery, cold boots, traffic soak | Not run |
-| LCD, removable SD, WPS and SIM hot-swap | Unverified; LCD/SD/WPS support not enabled |
+| LCD source and initialization checks | Seven tests passed on macOS; standalone Linux 6.12.112 DTB compile passed; display-enabled full build and actual pixels pending |
+| Removable SD, WPS and SIM hot-swap | Unverified; SD/WPS support not enabled |
 
 The actual production DTB is 54,998 bytes, SHA-256
 `0bd0e5936294b2331b4e7d17671c86a6b54dc59b3e2bb2071b3a50d69d4a856d`.

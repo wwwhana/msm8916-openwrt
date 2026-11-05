@@ -2,12 +2,12 @@ From: OpenWrt MSM8916 Maintainers
 Subject: [PATCH] arm64: dts: qcom: add A8 HM-MiFiB-V18
 
 Reuse the closely matching V12 board description, preserve the stock L6
-power policy, and give A8 its own upgrade identity. Do not drive the
-V12-specific status lamp pins on this LCD board.
+power policy, and describe the stock SPI GC9107 display and MPP4 current
+sink backlight. Do not drive the V12-specific status lamp pins.
 
 --- /dev/null
 +++ b/arch/arm64/boot/dts/qcom/msm8916-generic-mifib-v18.dts
-@@ -0,0 +1,38 @@
+@@ -0,0 +1,132 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * A8, PCB HM-MiFiB-V18. The closest stock MTP DTB has the same 885
@@ -15,16 +15,110 @@ V12-specific status lamp pins on this LCD board.
 + * See Docs/MIFIB_V18/README.md for evidence and unverified hardware.
 + */
 +#include "msm8916-generic-mifib-v12.dts"
++#include <dt-bindings/pinctrl/qcom,pmic-mpp.h>
 +
 +/ {
 +	model = "A8 (HM-MiFiB-V18)";
 +	compatible = "mifib-v18,generic", "qcom,msm8916";
++
++	lcd_backlight: backlight {
++		compatible = "gpio-backlight";
++		gpios = <&pm8916_mpps 4 GPIO_ACTIVE_HIGH>;
++		pinctrl-names = "default";
++		pinctrl-0 = <&lcd_backlight_default>;
++	};
 +};
 +
-+/* Match the stock 1.8 V rail even while display support is absent. */
++/* Shared 1.8 V rail: match the stock policy, not just the LCD consumer. */
 +&pm8916_l6 {
 +	regulator-boot-on;
 +	regulator-always-on;
++};
++
++&pm8916_rpm_regulators {
++	pm8916_l17: l17 {
++		regulator-min-microvolt = <2850000>;
++		regulator-max-microvolt = <2850000>;
++	};
++};
++
++&blsp_spi5 {
++	status = "okay";
++	pinctrl-names = "default", "sleep";
++	pinctrl-0 = <&lcd_spi_default &lcd_cs_default>;
++	pinctrl-1 = <&lcd_spi_sleep>;
++
++	display@0 {
++		compatible = "mifib-v18,gc9107", "panel-mipi-dbi-spi";
++		reg = <0>;
++		spi-max-frequency = <16000000>;
++		reset-gpios = <&tlmm 11 GPIO_ACTIVE_LOW>;
++		dc-gpios = <&tlmm 30 GPIO_ACTIVE_HIGH>;
++		pinctrl-names = "default";
++		pinctrl-0 = <&lcd_control_default>;
++		power-supply = <&pm8916_l17>;
++		io-supply = <&pm8916_l6>;
++		backlight = <&lcd_backlight>;
++		/* Always initialize; panel readback wiring is unverified. */
++		write-only;
++		format = "r5g6b5";
++		width-mm = <23>;
++		height-mm = <23>;
++
++		/* Stock address window: 0..127 on both axes, no offset. */
++		panel-timing {
++			clock-frequency = <0>;
++			hactive = <128>;
++			vactive = <128>;
++			hback-porch = <0>;
++			vback-porch = <0>;
++			hfront-porch = <0>;
++			hsync-len = <0>;
++			vfront-porch = <0>;
++			vsync-len = <0>;
++		};
++	};
++};
++
++&pm8916_mpps {
++	lcd_backlight_default: lcd-backlight-state {
++		pins = "mpp4";
++		function = "sink";
++		power-source = <PM8916_MPP_VPH>;
++		/* Linux 6.12 writes the raw sink code: 7 = stock 40 mA. */
++		drive-strength = <7>;
++		output-low;
++	};
++};
++
++&tlmm {
++	lcd_spi_default: lcd-spi-default-state {
++		pins = "gpio16", "gpio17", "gpio19";
++		function = "blsp_spi5";
++		drive-strength = <12>;
++		bias-disable;
++	};
++
++	lcd_cs_default: lcd-cs-default-state {
++		pins = "gpio18";
++		function = "blsp_spi5";
++		drive-strength = <2>;
++		bias-disable;
++	};
++
++	lcd_spi_sleep: lcd-spi-sleep-state {
++		pins = "gpio16", "gpio17", "gpio18", "gpio19";
++		function = "gpio";
++		drive-strength = <2>;
++		bias-pull-down;
++	};
++
++	lcd_control_default: lcd-control-default-state {
++		pins = "gpio11", "gpio30";
++		function = "gpio";
++		drive-strength = <8>;
++		bias-disable;
++	};
 +};
 +
 +/*

@@ -1,0 +1,69 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+# The framebuffer console handles fonts, pixel format and scanline stride.
+# Use tty1 only; the serial console and its login remain available.
+
+read_value() {
+	[ -r "$1" ] && cat "$1" 2>/dev/null
+}
+
+battery_line() {
+	local cap volt status suffix
+	cap=$(read_value /sys/class/power_supply/pm8916-bms-vm/capacity)
+	volt=$(read_value /sys/class/power_supply/pm8916-bms-vm/voltage_now)
+	status=$(read_value /sys/class/power_supply/pm8916-lbc-chgr/status)
+	[ "$status" = Charging ] && suffix=' CHG'
+	case "$cap" in
+		''|*[!0-9]*) ;;
+		*) if [ "$cap" -le 100 ]; then printf 'BAT %s%%%s' "$cap" "$suffix"; return; fi ;;
+	esac
+	case "$volt" in
+		''|*[!0-9]*) printf 'BAT --' ;;
+		*) awk -v v="$volt" -v s="$suffix" 'BEGIN {printf "BAT %.2fV%s",v/1000000,s}' ;;
+	esac
+}
+
+wifi_line() {
+	local data up
+	data=$(ubus -t 3 call network.wireless status 2>/dev/null) || { printf 'WIFI --'; return; }
+	up=$(printf '%s' "$data" | jsonfilter -e '@.*.up' 2>/dev/null)
+	case "$up" in
+		*true*) printf 'WIFI ON' ;;
+		*false*) printf 'WIFI OFF' ;;
+		*) printf 'WIFI --' ;;
+	esac
+}
+
+modem_line() {
+	local modem state
+	modem=$(mmcli --timeout=3 -L 2>/dev/null | sed -n 's|.*/Modem/\([0-9][0-9]*\).*|\1|p' | head -n 1)
+	[ -n "$modem" ] || { printf 'MODEM --'; return; }
+	state=$(mmcli --timeout=3 -m "$modem" -K 2>/dev/null |
+		awk -F ': *' '/^[[:space:]]*modem.generic.state[[:space:]]*:/ {print toupper($2); exit}')
+	printf 'MODEM %s' "${state:---}"
+}
+
+show_status() {
+	local battery wifi modem address uptime
+	battery=$(battery_line)
+	wifi=$(wifi_line)
+	modem=$(modem_line)
+	address=$(ubus -t 3 call network.interface.lan status 2>/dev/null |
+		jsonfilter -e '@["ipv4-address"][0].address' 2>/dev/null)
+	uptime=$(awk '{printf "UP %dh %02dm",$1/3600,($1%3600)/60}' /proc/uptime)
+	# Exactly eight rows, no trailing newline: no scrolling on 128x128/8x16.
+	printf '\033[H%-16.16s\r\n%-16.16s\r\n%-16.16s\r\n%-16.16s\r\n%-16.16s\r\n%-16.16s\r\n%-16.16s\r\n%-16.16s' \
+		'OpenWrt A8' '' "$battery" "$wifi" "$modem" "${address:---}" "$uptime" ''
+}
+
+main() {
+	tr '\000' '\n' < /proc/device-tree/compatible | grep -qx 'mifib-v18,generic' || exit 0
+	# Modules may finish probing after procd starts this service.
+	while [ ! -e /sys/class/graphics/fb0/name ] || [ ! -c /dev/tty1 ]; do sleep 2; done
+	exec 3>/dev/tty1 || exit 1
+	# Disable cursor, line wrap and the console blank timer; white on black.
+	printf '\033[?25l\033[?7l\033[9;0]\033[37;40m\033[2J' >&3
+	while :; do show_status >&3; sleep 5; done
+}
+
+if [ "$1" != --source-only ]; then main; fi

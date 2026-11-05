@@ -279,6 +279,17 @@ EOF
     [ -n "$SHARED_DIFF" ] || rm -f "$diff_file"
 fi
 
+# Status-screen checks use the package sources, which are intentionally absent
+# from the small board-only trees used by the harness self-check below.
+if [ -f "$ROOT/packages/a8-display/Makefile" ]; then
+    section "A8 display"
+    if python3 "$ROOT/tests/a8-display/test_display.py"; then
+        ok "A8 panel initialization and status-screen checks"
+    else
+        bad "A8 panel initialization or status-screen checks failed"
+    fi
+fi
+
 # ---- self-check ------------------------------------------------------------
 if [ "$SELF_CHECK" -eq 1 ]; then
     section "self-check (mutants caught, valid gates accepted)"
