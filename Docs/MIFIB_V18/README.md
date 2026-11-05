@@ -6,7 +6,8 @@ with an LCD and PCB marking **HM-MiFiB-V18**. The build target is
 compatible is `mifib-v18,generic`. A8 is a sales name; this target does not
 cover every product sold under that name.
 
-**Status:** board support is implemented for testing. An OpenWrt boot, cellular
+**Status:** the complete OpenWrt build and offline image inspection passed.
+Board support is ready for hardware testing. An OpenWrt boot, cellular
 connection, charging test and recovery test on this A8 have not been verified.
 V12's feature matrix does not establish working features on V18.
 
@@ -81,7 +82,26 @@ contains a 512 MB MTP variant with board-id `<8 0x100>`.
 | WPS | Stock DT describes GPIO27, active low. V12's physical WPS button did not produce that GPIO event; A8 wiring is also unverified. No WPS key is enabled here. |
 | SIM | Matching stock description for GPIO119/112/12 selection and GPIO114 re-announce. Registration and hot-swap remain untested. |
 | LCD | Stock DT includes GC9107 and ST7735S descriptions. GC9107 is described as 128×128; the selected panel remains unconfirmed. Reset/DC are described on GPIO11/30. Display support is not implemented. |
-| SD | An unpopulated connector footprint is visible. Stock SDC2 is enabled with a four-bit bus, but that alone does not prove the footprint is wired or supports removable cards. SDC2 stays disabled here. |
+| Wi-Fi bands | The initial mainline description selects `qcom,wcn3620`, inherited from V12. [Linux treats WCN3620 as 2.4 GHz only](https://github.com/torvalds/linux/blob/v6.12/drivers/net/wireless/ath/wcn36xx/main.c#L1345). This is a port configuration, not a physical RF-chip identification or a measured A8 channel list. |
+| Bluetooth | The mainline DT contains the WCNSS Bluetooth device over SMD, and the image includes `btqcomsmd`, `btqca` and BlueZ. The A8 antenna arrangement, controller discovery, scanning and pairing remain unverified. |
+| SD | Eight contact pads and mounting pads below the SIM socket suggest an unpopulated microSD socket. The separate round `D0`–`D3`/`CMD`/`CLK` pads are SD/MMC test points; whether they connect to eMMC or SDC2 is unverified. Stock SDC2 is enabled with a four-bit bus, but that alone does not prove the footprint is wired or supports removable cards. Check continuity, supplies and missing passives before fitting a socket. SDC2 stays disabled here. |
+
+After booting OpenWrt, these read-only checks can record the wireless state;
+they cannot run while the device is in EDL:
+
+```sh
+iw list
+bluetoothctl list
+dmesg | grep -E 'wcn36xx|wcnss|Bluetooth|btqcomsmd'
+```
+
+[`iw list`](https://wireless.docs.kernel.org/en/latest/en/users/documentation/iw.html#getting-device-capabilities)
+reports the bands exposed by the current driver/configuration; it is not an
+independent identification of the physical RF chip.
+[`bluetoothctl list`](https://github.com/bluez/bluez/blob/master/doc/bluetoothctl.rst)
+lists controllers known to BlueZ. An empty list also requires checking the
+service, firmware and kernel messages; a listed controller still needs scanning
+and pairing tests before Bluetooth can be marked working on this A8.
 
 The PCB marking is a hardware revision, not a firmware version. Conflicting
 case/board IMEI labels do not establish the chipset or board identity; use
@@ -133,6 +153,22 @@ Expected files share the prefix
 Check the actual boot DTB, upgrade metadata and GPT rather than filenames
 alone. The first compatible must be `mifib-v18,generic`.
 
+The first complete build, [run 42040234977](https://github.com/wwwhana/msm8916-openwrt/actions/runs/42040234977)
+at `ce14a4f`, passed after about 1 hour 55 minutes. Its original upload pattern
+retained the four production images and package manifest, but missed the
+installer and firmware ZIP. These two files were built separately by
+[run 42044504211](https://github.com/wwwhana/msm8916-openwrt/actions/runs/42044504211)
+at `23d3beb`. The board, package and kernel inputs are unchanged between these
+commits. The later workflow fixes the upload pattern and checks all required
+outputs. Download both artifacts when using this first build.
+
+The combined local bundle is `../artifacts/` relative to this repository.
+Its six public build files and package manifest retain their original names.
+`build-info.json` records source runs, file sizes, SHA-256 values and offline
+checks; `SHA256SUMS` also covers the private recovery image and this record.
+`saved/` and `recovery-mifib-v18.img` contain this unit's private radio data
+and are kept locally, outside Git and GitHub artifacts.
+
 For a bootloader-only rebuild, select the same board and set
 `bootloader_only=true` in Board Build. This uses the existing firmware
 generator and Docker builder, without rebuilding OpenWrt. The separate
@@ -146,6 +182,14 @@ uploading, and `flash.sh`/`firmware.zip` names do not contain `-squashfs-`.
 lk2nd/lk1st build). It is part of the migration, not a replacement for the
 production `boot.img` or the separate rescue image. Check the actual ZIP
 contents and component sizes against the target GPT before installation.
+
+The bundle replaces the A8's original boot chain. Its `sbl1`, `rpm` and `tz`
+come from the project's DragonBoard 410c Linux-176 firmware package, not this
+unit's backup; `aboot` and `hyp` are newly built. The downloaded `tz.mbn` is
+605,312 bytes: larger than Android's 524,288-byte `tz` partition, but within
+the new 1,048,576-byte partition. Do not write this bundle using the Android
+GPT. Matching entry addresses or fitting the new partitions does not verify
+that this boot chain starts on V18; that hardware check remains outstanding.
 
 ## Installation and recovery constraints
 
@@ -182,8 +226,20 @@ Local recovery preparation extracted this unit's nine WCNSS firmware files
 from `modem.bin`. The 29,816-byte Wi-Fi NV file extracted from `persist` is
 identical in both supplied complete backups, even though the complete
 `persist` partitions differ. These inputs stay in the git-ignored
-`msm89xx/recovery/blobs/mifib-v18/` directory. Recovery still needs hostapd,
-its library dependencies and modules from the same production build; private
+`msm89xx/recovery/blobs/mifib-v18/` directory. Hostapd, iw, their libraries
+and all eight recovery modules were taken from this build's production
+rootfs; the kernel payload was copied verbatim from its production boot
+image. The existing recovery builder ran in a temporary staging tree,
+without changing the tracked frozen recovery files.
+
+The resulting private `../artifacts/recovery-mifib-v18.img` is **11,913,216
+bytes (11.36 MiB)**, within the new 16 MiB recovery partition. Its SHA-256 is
+`bde1ada6fe193391ea8c9b65c76f6cdf0c47b5fe9808a4b4854a09dd4791afa8`.
+Offline checks verified the packed kernel, initramfs contents, module release
+and origin, executable/library dependencies, and byte identity of this unit's
+firmware and Wi-Fi calibration. Hostapd, iw and Dropbear version/help commands
+also ran in the ARM64 inspection container. Booting this image, its USB/Wi-Fi
+interfaces and the RST recovery path still require device tests. Private
 calibration is not part of the GitHub Actions artifact.
 
 First-boot firmware extraction uses the preserved original `modem` and
@@ -207,6 +263,14 @@ GPT; they are not commands to write raw sectors by hand.
 | `persist` | 2490368 | 144386 | 65536 |
 | `sec` | 658496 | 209922 | 32 |
 
+The local installation folder's `saved/` directory is pre-populated from
+this unit's EDL `backup.bin`: all seven files have the recorded partition
+lengths and SHA-256 values, totaling 105,399,296 bytes. These are private
+installation inputs, not public build artifacts. The original complete
+backups remain in the parent A8 directory. Comparison with the connected
+device has not been run in this build phase. A mismatch must be investigated;
+do not use `--refresh-backup` merely to force past it.
+
 The installation script now enforces this sequence:
 
 1. Require all seven original GPT lengths. Read each radio partition to
@@ -229,6 +293,15 @@ The installation script now enforces this sequence:
 `--yes` does not bypass these checks. A normal `repartition` operation must
 keep radio/boot regions unchanged; it may only shrink the overlay tail for
 `misc` and `recovery`.
+
+These are installer checks. During normal OpenWrt operation,
+[`rmtfs.init`](../../packages/rmtfs/files/rmtfs.init) creates partition-label
+links from sysfs and starts `rmtfs -P -s`; modem storage resolves
+`modemst1`/`modemst2` by label using the
+[pinned upstream storage implementation](https://github.com/linux-msm/rmtfs/blob/586372e575f5cc1a7cbb170219ab6df98f394cae/storage.c).
+The normal service permits NV writes. Preserve the original backups for
+runtime recovery too; passing migration checks does not establish that modem
+operation on this A8 is safe or stable.
 
 If a migration is interrupted, keep the complete backup and `saved/` files
 unchanged and remain in EDL. Reusing `saved/` will stop if the current radio
@@ -255,23 +328,30 @@ device and perform no real EDL operations. They are also included in CI.
 | GNU Make evaluation of V18 profile inheritance | Passed; correct identity, capacity, recovery layout and battery package; recovery flag resets for the next board |
 | Patches 801 and 869 | Passed both `git apply --check` and zero-fuzz `patch --dry-run` |
 | Standalone DTB compile on Linux 6.12.94 DTS inputs | Passed; 12 relevant shared/board DTS patch subsets applied with zero fuzz |
-| Compiled DTB contents | 461 nodes; V18 identity, L6 at 1.8 V with both power flags, reset GPIO102 active-low, 4.2 V battery profile, only SIM pulse LED output, SDC2 disabled |
+| DTB extracted from the actual production boot image | 54,998 bytes, 461 nodes; byte-identical to the standalone compile; V18 identity, L6 at 1.8 V with both power flags, reset GPIO102 active-low, 4.2 V battery profile, only SIM pulse LED output, SDC2 disabled |
 | Generated GPT against original A8 radio sizes/offsets | Passed using backup metadata and sparse test files; no radio contents or device were written |
 | Radio migration failure/success tests | Passed: 22 tests on both Linux and macOS |
 | GitHub Actions test suites for `ce14a4f` | [Passed](https://github.com/wwwhana/msm8916-openwrt/actions/runs/42040239138): modem guard, 22 radio migration tests, and 54 board-profile checks |
-| Complete OpenWrt build and image inspection | Not run; another device held the shared build lock during these checks |
+| GitHub Actions bootloader build for `23d3beb` | [Passed](https://github.com/wwwhana/msm8916-openwrt/actions/runs/42044504211); downloaded artifact digest and ZIP CRCs match, all five components fit the V18 GPT, installer matches tested source, and aboot contains recovery-key/failover/EDL code markers |
+| Complete OpenWrt build | [Passed on GitHub Actions](https://github.com/wwwhana/msm8916-openwrt/actions/runs/42040234977) for `ce14a4f`; Linux 6.12.112, GCC 14.3.0 |
+| Downloaded production artifact | GitHub archive SHA-256 and ZIP CRCs match; Android boot header, V18 DTB, firmware metadata/CRC and both GPT header/entry-array CRCs passed |
+| Actual image sizes against the generated GPT | Boot 6,603,036 bytes / 64 MiB; system 28,364,763 bytes / 128 MiB; private recovery 11,913,216 bytes / 16 MiB; all fit |
+| Sysupgrade content against standalone images | Kernel byte-identical; rootfs bytes identical with the expected 321 zero bytes added to a 1 KiB boundary by OpenWrt's sysupgrade packer |
+| Actual generated GPT with the installer's radio preflight | Passed against original A8 layout metadata and sparse files; all seven radio lengths preserved, `modemst2` moves to partition 5 at LBA 141314 |
+| Private V18 recovery build and offline inspection | Passed; production kernel and eight matching modules, this unit's firmware/NV, initramfs contents and userspace library checks; 11.36 MiB image |
+| Combined local bundle with the real installer | Correct V18 GPT, boot, system and private recovery files selected; radio preflight passed against original GPT metadata and actual local `saved/` file lengths, with device access blocked |
 | Device boot, USB network, Wi-Fi, LTE traffic | Not run |
 | Charging, temperature, reset/recovery, cold boots, traffic soak | Not run |
 | LCD, removable SD, WPS and SIM hot-swap | Unverified; LCD/SD/WPS support not enabled |
 
-The standalone DTB is 54,998 bytes, SHA-256
+The actual production DTB is 54,998 bytes, SHA-256
 `0bd0e5936294b2331b4e7d17671c86a6b54dc59b3e2bb2071b3a50d69d4a856d`.
-It is a validation artifact, not a boot image. The V12 baseline and V18 compile
-both report the same four warnings in shared upstream DTS nodes. A complete
-OpenWrt build and inspection of its actual boot image remain necessary.
-Local validation artifacts are kept outside Git under
-`../analysis/openwrt-port/` relative to this repository: `a8-v18.dtb` and
-`a8-v18-gpt_both0.bin`. They are not a complete installation bundle.
+It matches the earlier standalone compile. The V12 baseline and V18 standalone
+compile both report the same four warnings in shared upstream DTS nodes.
+Production GPT GUIDs differ from the standalone generator run, so file hashes
+are not interchangeable; both layouts passed the header/array CRC, partition
+bounds and radio-size checks. The inspected production files and their current
+hashes are in the local bundle's `build-info.json` and `SHA256SUMS`.
 
 Use [the board sign-off checklist](../../tests/board-profile/signoff.sh) to
 record runtime results before calling this a hardware-supported board.
