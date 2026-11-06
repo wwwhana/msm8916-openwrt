@@ -10,22 +10,29 @@ cover every product sold under that name.
 and EDL installation passed. All 20 final device read-back checks matched,
 including all seven radio partitions. The user subsequently reported running
 OpenWrt at `192.168.8.1`.
-Agent SSH access to that address timed out, so console inspection remains
-pending. Cellular operation, charging and recovery on this A8 have not been
-verified.
+Agent SSH access to that address timed out. Cellular operation, charging and
+recovery on this A8 have not been verified.
 
-**Build-only update:** LCD, USB ADB, travel APN profiles and one-button menus
-are implemented below. The complete image build
-[42163596055](https://github.com/wwwhana/msm8916-openwrt/actions/runs/42163596055)
-at `12ea725`, downloaded-image inspection and 22 ARM64 userspace checks passed.
-The image includes the menu-enabled bootloader. This update has not been
-installed; visible LCD output, physical buttons and USB ADB on this unit
-remain unverified.
+**Installed update, 2026-11-06:** complete image build
+[42187058705](https://github.com/wwwhana/msm8916-openwrt/actions/runs/42187058705)
+and [tests 42187062701](https://github.com/wwwhana/msm8916-openwrt/actions/runs/42187062701)
+passed at `0c75e22`. The downloaded image includes `a8-display` **1.0-r5**,
+LuCI display/button choices, ADB, APN profiles and the menu-enabled aboot.
+Offline inspection and 13 checks in that image's ARM64 userspace passed.
+EDL writes to aboot, boot and rootfs were read back successfully; all seven
+radio partition hashes and both GPT copies stayed unchanged. Overlay and
+the existing recovery were preserved.
+
+The A8 subsequently exposed USB ACM and provided a root OpenWrt console:
+Linux **6.12.112**, board `mifib-v18,generic`, `adbd` and `a8-display` present.
+The 128×128 RGB565 framebuffer, backlight brightness 1, display services and
+power input were registered. **The user sees a white LCD**, so visible menus
+and physical navigation remain unverified. ADB failed to enumerate because
+this BusyBox rejects `sleep 0.1`; the manager now uses the available `usleep`.
+The source fix passes 13 USB checks. Its attempted live application did not
+return a completion response; the serial shell then stopped responding.
+An owner power cycle is pending before further device checks.
 V12's feature matrix does not establish working features on V18.
-
-The follow-up `a8-display` **1.0-r5** source adds LuCI display/button choices.
-Its local source and isolated OpenWrt runtime checks are described below;
-the previously downloaded `12ea725` image still contains **1.0-r4**.
 
 ## Documentation reviewed before implementation
 
@@ -186,14 +193,16 @@ checks; `SHA256SUMS` also covers the private recovery image and this record.
 `saved/` and `recovery-mifib-v18.img` contain this unit's private radio data
 and are kept locally, outside Git and GitHub artifacts.
 
-The current build-only update is stored separately in `../artifacts/update/`.
+The installed update is stored separately in `../artifacts/update/`.
 Its seven downloaded files, `build-info.json` and `SHA256SUMS` record source
-`12ea725`, Actions artifact `13482086344`, image/component hashes and runtime
+`0c75e22`, Actions artifact `13494680704`, image/component hashes and runtime
 checks. The downloaded archive SHA-256 is
-`7c74b803a41d41f7e3a357fd68ec11841eb5625dfa62329893fefd0f421be38a`.
-It contains no private radio backup or new recovery image. Keep the installed
-GPT and existing private recovery for a later reviewed aboot/boot/rootfs
-update; the migration installer is not the update procedure for this unit.
+`0dc28532798788bcb88ed7841d1fa9471754541617a27042185d54a95332ecfc`.
+It contains no private radio backup or new recovery image. Installation kept
+the existing GPT and private recovery, with a verified update to only
+aboot/boot/rootfs. Before-write snapshots of those three partitions are kept
+in `../analysis/openwrt-port/update-*-before.bin`. The migration installer is
+not the update procedure for this already migrated unit.
 
 For a bootloader-only rebuild, select the same board and set
 `bootloader_only=true` in Board Build. This uses the existing firmware
@@ -215,7 +224,8 @@ unit's backup; `aboot` and `hyp` are newly built. The downloaded `tz.mbn` is
 605,312 bytes: larger than Android's 524,288-byte `tz` partition, but within
 the new 1,048,576-byte partition. Do not write this bundle using the Android
 GPT. Matching entry addresses or fitting the new partitions does not verify
-that this boot chain starts on V18; that hardware check remains outstanding.
+that every boot-chain feature works on V18. This chain has now reached the
+OpenWrt root console; visible boot-menu output remains unverified.
 
 ## LCD support
 
@@ -349,8 +359,11 @@ given a new board profile without their own PCB/stock-firmware evidence.
 The new boot menu is part of **`aboot.mbn`** in the firmware ZIP. Updating
 only boot/rootfs adds the OpenWrt menu but cannot add the boot menu to an
 older installed bootloader. A later bootloader update must target aboot
-specifically and keep the existing GPT and radio partitions. Current work
-is build-only; no bootloader or device installation has been performed.
+specifically and keep the existing GPT and radio partitions. The `0c75e22`
+installation updated aboot as well as boot/rootfs and verified all three.
+The installed aboot partition is **1 MiB**, and the payload is 337,696 bytes.
+The follow-up source also corrects the LK font lookup to use its full ASCII
+table; that correction has not yet been installed.
 
 The `a8-display` service shows battery capacity when available, otherwise
 battery voltage, charging state, Wi-Fi up/down, ModemManager state, LAN IPv4
@@ -407,6 +420,13 @@ The existing gadget manager adds `ffs.adb` to the same gadget as NCM/ACM.
 It waits for both FunctionFS data endpoints before binding USB, falls back
 to network/serial if ADB fails, and watches for a gadget unbound by a cable
 reset or daemon restart. Start/stop and reconnect share a lock.
+
+On the installed `0c75e22` image, the real boot log showed `sleep: invalid
+number '0.1'` during endpoint polling, followed by the ADB fallback. All board
+diffconfigs already select BusyBox `usleep`; the manager's sub-second waits
+now use `usleep 100000`. A delayed-endpoint test rejects fractional `sleep`
+and checks that ADB joins after readiness. This source correction and the
+attempted live application are separate from the downloaded image.
 
 On V18, a one-time defaults script enables ADB even when upgrading with the
 old USB configuration preserved. An existing explicit ADB setting is kept.
@@ -677,17 +697,20 @@ device and perform no real EDL operations. They are also included in CI.
 | Charging, temperature, reset/recovery, cold boots, traffic soak | Not run |
 | LCD source and initialization checks | Twelve tests passed on macOS, including menu controls; standalone Linux 6.12.112 DTB compile passed. Actual pixels remain unverified. |
 | Display kernel configuration | Linux 6.12.112 `listnewconfig` detects the missing Acer EC setting before the fix; no new prompts after the fix, and `syncconfig` succeeds with stdin closed. Required framebuffer/panel/backlight options and both unrelated-driver exclusions verified. |
-| USB ADB source checks | Twelve tests passed: nine startup/reconnect/fallback/default-setting checks plus three package-preparation checks. Linux board harness with mutation checks also passed. |
+| USB ADB source checks | Thirteen tests passed: ten startup/reconnect/fallback/default-setting checks, including delayed descriptors with integer-only `sleep`, plus three package-preparation checks. Linux board harness with mutation checks also passed. |
 | Travel APN source checks | Five tests passed on macOS, including the actual Lua model and staged-settings guard. Database generation, home-operator selection, manual profiles and existing-daemon integration checked; the final image also passes actual Lua 5.1/libuci configuration writes in the isolated rootfs. ModemManager replies and interface restarts are simulated. |
-| Updated LCD/ADB/APN/menu firmware | Final source `12ea725` [built successfully](https://github.com/wwwhana/msm8916-openwrt/actions/runs/42163596055); tests [42163630238](https://github.com/wwwhana/msm8916-openwrt/actions/runs/42163630238) passed. Downloaded archive digest/ZIP CRCs, metadata CRCs and sysupgrade/standalone content checks passed. `a8-apn` is `1.0-r2` and `a8-display` is `1.0-r4`. No device installation has been performed. |
-| Updated image sizes and GPT | Boot 6,648,092 bytes / 64 MiB; rootfs 29,365,669 bytes / 128 MiB. Primary/backup GPT CRCs pass and all 17 partition geometries match the installed baseline, including `modemst2` at partition 5, LBA 141314–144385. Generated GUIDs differ; the existing GPT is retained for an update. |
+| Previous LCD/ADB/APN/menu build | Source `12ea725` [built successfully](https://github.com/wwwhana/msm8916-openwrt/actions/runs/42163596055); tests [42163630238](https://github.com/wwwhana/msm8916-openwrt/actions/runs/42163630238) passed. Its `a8-display` is `1.0-r4`; this image was inspected but not installed. |
+| Installed LuCI display/button build | Source `0c75e22`: [build 42187058705](https://github.com/wwwhana/msm8916-openwrt/actions/runs/42187058705) and [tests 42187062701](https://github.com/wwwhana/msm8916-openwrt/actions/runs/42187062701) passed. Archive/ZIP checks, metadata CRC and standalone/sysupgrade comparisons passed. `a8-apn` is `1.0-r2`, `a8-display` is `1.0-r5`. Thirteen checks pass in the actual ARM64 image without source overlays. |
+| Updated image sizes and GPT | Boot 6,648,092 bytes / 64 MiB; rootfs 29,369,037 bytes / 128 MiB. Primary/backup GPT CRCs pass and all 17 partition geometries match the installed baseline, including `modemst2` at partition 5, LBA 141314–144385. Generated GUIDs differ; installation retained the existing GPT. |
 | Updated LCD DTB and kernel configuration | DTB 56,444 bytes / 469 nodes, byte-identical to the standalone LCD compile. V18 identity, panel pins/timing/supplies, MPP4 sink drive 7, disabled SDC2 and Bluetooth description verified. Framebuffer console, 8x16 font, PMIC power-key/evdev, FunctionFS, built-in GPIO backlight and PMIC GPIO/MPP controller verified in the actual kernel configuration. |
-| Actual ARM64 image userspace | All 22 checks passed using the final image's Lua 5.1/libuci and musl programs, without source overlays, network access or physical devices. Covers real APN configuration writes/migration, home-vs-visited operator selection, no-SIM/locked-SIM handling, staged edits (including edits during modem queries), retry, RPC, menu actions/confirmations, legacy button suppression and input-reader disconnect/ticks. Modem responses and `ifup` are simulated; power commands are not executed. |
+| Previous r4 ARM64 userspace | All 22 checks passed using that image's Lua 5.1/libuci and musl programs, without source overlays, network access or physical devices. Covers real APN configuration writes/migration, home-vs-visited operator selection, no-SIM/locked-SIM handling, staged edits (including edits during modem queries), retry, RPC, menu actions/confirmations, legacy button suppression and input-reader disconnect/ticks. Modem responses and `ifup` are simulated; power commands are not executed. |
 | One-button menus | Twelve display tests pass, including shared short/long/debounce/startup-held timing, boot-mode selection/timeout, Lua navigation/confirmation and APN settings actions. Host Linux and ARM64 input-reader compilation passes with warnings treated as errors. The deployed ARM64/musl reader stays alive and emits ticks without an input device in the sandbox. Physical LCD/button operation remains unverified. |
 | LuCI display/button follow-up source (`a8-display` 1.0-r5) | Fifteen source checks covered across macOS and Linux (the Linux evdev case runs separately from the macOS Lua/Node cases); Linux board harness: 57 passed, 0 failed, 3 skipped. Thirteen isolated OpenWrt Lua 5.1/libuci checks pass with the new source overlaid on the previous rootfs: real staged/committed settings, original power handler, RPC and V18/V12 init routing. Power commands and devices are simulated. This is not an inspection of a newly built image or a physical LuCI/browser test. |
-| Menu-enabled bootloader | [42155142274](https://github.com/wwwhana/msm8916-openwrt/actions/runs/42155142274) passed for `c0a772d`, whose bootloader inputs are unchanged in `12ea725`. The downloaded archive digest/ZIP CRCs and all five component sizes passed. The 337,696-byte aboot contains the visible menu/control strings and fits its 512 KiB partition. Actual boot-menu output remains unverified. |
+| Menu-enabled bootloader | [42155142274](https://github.com/wwwhana/msm8916-openwrt/actions/runs/42155142274) passed for `c0a772d`; all five components are byte-identical in the installed `0c75e22` ZIP. The 337,696-byte aboot fits the actual **1 MiB** partition and was read back after installation. Actual boot-menu output remains unverified; the follow-up font-index correction is source-only. |
 | Standalone USB adbd build | AOSP daemon and bundled libraries compiled and linked on ARM64 Alpine/musl; missing FunctionFS exits with an error. Ubuntu 22.04 host Go 1.18 generates the same BoringSSL error table. This is not an OpenWrt firmware build or device connection test. |
-| USB ADB on this A8 | Not run; shell, file transfer and unplug/replug require the new image and an accessible USB connection |
+| `0c75e22` EDL update | Passed: only aboot/boot/rootfs written. Each full partition read-back verified payload, sector padding and untouched tail. All seven radio hashes, including `modemst2`, and both GPT copies stayed unchanged; reset succeeded. |
+| Updated OpenWrt on this A8 | Root USB ACM shell observed: Linux 6.12.112, V18 identity, new packages, 128×128 RGB565 fb0, brightness 1, running display/controller services and connected power input. The user reports white LCD output; visible navigation is not working yet. Serial later stopped responding; owner power cycle pending. |
+| USB ADB on this A8 | Enabled in UCI, but no ADB interface enumerated. Boot logs exposed unsupported fractional `sleep`; the `usleep` source fix passes 13 USB checks. Live application, ADB shell/file transfer and unplug/replug remain unconfirmed. |
 | Removable SD, WPS and SIM hot-swap | Unverified; SD/WPS support not enabled |
 
 The installed baseline DTB is 54,998 bytes, SHA-256

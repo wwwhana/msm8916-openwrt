@@ -133,7 +133,7 @@ static void draw_row(unsigned row, const char *text)
             unsigned char c=line[x/8], bits=0;
             int lit;
             if (c >= 32 && c < 127 && y >= 2 && y < 14)
-                bits=FONT[(c-32)*12+y-2];
+                bits=FONT[c*12+y-2];
             lit=(x%8 < 6) && (bits & (1u << (x%8)));
             spi_byte(lit ? 0xff : 0); spi_byte(lit ? 0xff : 0);
         }

@@ -77,7 +77,13 @@ mount() {
     [ "$4" != "$ADB_FFS" ] || touch "$ADB_FFS/.mounted" "$ADB_FFS/ep0"
 }
 umount() { echo unmount >> "$BASE/events"; rm -f "$ADB_FFS/.mounted" "$ADB_FFS"/ep*; }
-sleep() { :; }
+sleep() { case "$1" in *.*) return 1 ;; esac; }
+usleep() {
+    echo "usleep:$1" >> "$BASE/events"
+    if [ "$MODE" = delayed ] && [ "$(grep -c '^usleep:' "$BASE/events")" -ge 2 ]; then
+        touch "$ADB_FFS/ep1" "$ADB_FFS/ep2"
+    fi
+}
 find_udc() { echo fake.udc; }
 get_serial_number() { echo test; }
 setup_acm() { ln -sf "$CFG_FUNCTIONS_PATH/acm.GS0" "$CFG_CONFIG_PATH/"; echo +ACM; }
@@ -111,6 +117,12 @@ GADGET_LOCK="$BASE/lock"
         self.assertEqual((self.base / 'g/configs/c.1/strings/0x409/configuration').read_text().strip(),
                          'ACM+NCM+ADB')
         self.assertTrue((self.base / 'g/configs/c.1/ffs.adb').is_symlink())
+
+    def test_delayed_descriptors_with_integer_only_sleep(self):
+        self.run_shell('setup_gadget', mode='delayed')
+        self.assertEqual((self.base / 'g/UDC').read_text().strip(), 'fake.udc')
+        self.assertTrue((self.base / 'g/configs/c.1/ffs.adb').is_symlink())
+        self.assertEqual((self.base / 'events').read_text().count('usleep:100000'), 2)
 
     def test_partial_descriptors_keep_network_and_console(self):
         self.run_shell('setup_gadget', mode='partial')

@@ -166,7 +166,8 @@ lock_gadget() {
         [ "${1:-}" != try ] || return 1
         tries=$((tries + 1))
         [ "$tries" -lt 100 ] || error "USB gadget is busy"
-        sleep 0.1
+        # The board configs enable usleep, but not fractional BusyBox sleep.
+        usleep 100000
     done
     echo "$$" > "$GADGET_LOCK/pid"
     trap 'rm -f "$GADGET_LOCK/pid"; rmdir "$GADGET_LOCK" 2>/dev/null || true' EXIT
@@ -183,7 +184,7 @@ stop_adb() {
         until umount "$ADB_FFS" 2>/dev/null; do
             tries=$((tries + 1))
             [ "$tries" -lt 50 ] || return 1
-            sleep 0.1
+            usleep 100000
         done
     fi
     rmdir "$ADB_FFS" 2>/dev/null || true
@@ -201,7 +202,7 @@ setup_adb() {
             ln -sf "${CFG_FUNCTIONS_PATH}/ffs.adb" "${CFG_CONFIG_PATH}/" || return 1
             return 0
         fi
-        sleep 0.1
+        usleep 100000
         tries=$((tries + 1))
     done
     return 1
