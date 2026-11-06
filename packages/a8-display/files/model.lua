@@ -11,7 +11,11 @@ function M.new()
 end
 function M.event(s, event, profiles)
     if event == 'connected' or event == 'disconnected' then
-        s.connected = event == 'connected'; return
+        s.connected = event == 'connected'
+        if not s.connected then
+            s.page='status'; s.selection=1; s.entries=root; s.pending=nil
+        end
+        return
     end
     if event ~= 'short' and event ~= 'long' then return end
     s.message = nil

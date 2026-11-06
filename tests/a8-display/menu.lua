@@ -39,6 +39,10 @@ assert(state.selection == 1)
 model.result(state, false, string.rep('\27\n\255',30)); frame()
 event('disconnected'); assert(not state.connected)
 event('short'); assert(state.page == 'menu')
+event('short'); event('long'); event('long'); event('short')
+assert(state.page == 'confirm' and state.selection == 2)
+event('disconnected'); assert(state.page == 'status' and state.pending == nil)
+event('connected'); assert(event('long') == nil and state.page == 'menu')
 
 -- Run the actual action backend with an in-memory UCI fixture. No commands run.
 local values={settings={['.type']='settings', allow_roaming='0'},
