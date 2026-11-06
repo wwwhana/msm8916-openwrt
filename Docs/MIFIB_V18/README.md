@@ -527,7 +527,7 @@ device and perform no real EDL operations. They are also included in CI.
 
 | Check | Result |
 | --- | --- |
-| Board-profile checks, including the harness self-check on Linux | Passed: 54 checks; zero failures; three skips |
+| Board-profile checks, including the harness self-check on Linux | Latest run passed; the Lua-only APN model check is skipped in the builder image and passes separately on macOS. GNU sed is required by the harness's mutation checks. |
 | Shell syntax of the changed firmware generator and installer | Passed |
 | GNU Make evaluation of V18 profile inheritance | Passed; correct identity, capacity, recovery layout and battery package; recovery flag resets for the next board |
 | Patches 801 and 869 | Passed both `git apply --check` and zero-fuzz `patch --dry-run` |
@@ -548,8 +548,11 @@ device and perform no real EDL operations. They are also included in CI.
 | First software reset after installation | Reset command succeeded; USB network/console did not reappear during the initial observation. The user subsequently reported running OpenWrt at `192.168.8.1`; agent SSH access timed out, so console inspection remains pending. |
 | Wi-Fi, Bluetooth, LTE traffic | Not run |
 | Charging, temperature, reset/recovery, cold boots, traffic soak | Not run |
-| LCD source and initialization checks | Seven tests passed on macOS; standalone Linux 6.12.112 DTB compile passed; display-enabled full build and actual pixels pending |
-| USB ADB source checks | Nine startup/reconnect/fallback/default-setting checks passed on macOS and Alpine BusyBox ash; board harness with self-check: 56 passed, 0 failed, 3 skipped |
+| LCD source and initialization checks | Ten tests passed on macOS; standalone Linux 6.12.112 DTB compile passed; display-enabled full build and actual pixels pending |
+| Display kernel configuration | Linux 6.12.112 `listnewconfig` detects the missing Acer EC setting before the fix; no new prompts after the fix, and `syncconfig` succeeds with stdin closed. Required framebuffer/panel/backlight options and both unrelated-driver exclusions verified. |
+| USB ADB source checks | Twelve tests passed: nine startup/reconnect/fallback/default-setting checks plus three package-preparation checks. Linux board harness with mutation checks also passed. |
+| Travel APN source checks | Five tests passed on macOS, including the actual Lua model; database generation, home-operator selection, manual profiles and existing-daemon integration checked. Built-package UCI/ModemManager execution remains pending. |
+| Updated LCD/ADB/APN firmware | Not built yet. Runs [42128495414](https://github.com/wwwhana/msm8916-openwrt/actions/runs/42128495414) and [42131944306](https://github.com/wwwhana/msm8916-openwrt/actions/runs/42131944306) exposed missing DRM/Acer settings, fixed through `2643d2d`. New dispatches return HTTP 422, “Actions has been disabled for this repository”, although repository Actions permissions and both workflow states report enabled/active. No new artifact or device installation was produced. |
 | Standalone USB adbd build | AOSP daemon and bundled libraries compiled and linked on ARM64 Alpine/musl; missing FunctionFS exits with an error. Ubuntu 22.04 host Go 1.18 generates the same BoringSSL error table. This is not an OpenWrt firmware build or device connection test. |
 | USB ADB on this A8 | Not run; shell, file transfer and unplug/replug require the new image and an accessible USB connection |
 | Removable SD, WPS and SIM hot-swap | Unverified; SD/WPS support not enabled |
