@@ -81,4 +81,29 @@ values.proto='modemmanager'
 function cursor:commit() return false end
 p, reason = model.apply(cursor, 'modem', lgu, auto)
 assert(p == nil and reason == 'commit-failed')
+
+-- Staged settings must not reach modem queries, configuration writes or ifup.
+local pending_config
+package.preload.uci=function() return {cursor=function()
+    return {
+        get_all=function(_, config, section)
+            assert(config == 'a8_apn' and section == 'settings')
+            return {mode='auto',interface='modem'}
+        end,
+        changes=function(_, config)
+            return pending_config == config and {[config]={modem={apn='unsaved.example'}}} or {}
+        end
+    }
+end} end
+package.preload['luci.jsonc']=function() return {parse=function() return {} end} end
+package.preload['a8_apn.model']=function() return model end
+local open, popen = io.open, io.popen
+io.open=function() return nil end
+io.popen=function() error('modem query while settings are staged') end
+local service=dofile(arg[1]:gsub('model.lua$', 'service.lua'))
+for _, config in ipairs({'network','a8_apn'}) do
+    pending_config=config
+    assert(service.apply().state == 'pending-changes')
+end
+io.open, io.popen = open, popen
 print('APN selection, manual mode, roaming, credentials and config writes passed')

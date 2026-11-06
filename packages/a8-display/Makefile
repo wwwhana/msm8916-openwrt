@@ -4,7 +4,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=a8-display
 PKG_VERSION:=1.0
-PKG_RELEASE:=3
+PKG_RELEASE:=4
 PKG_LICENSE:=GPL-2.0-only
 
 include $(INCLUDE_DIR)/kernel.mk
@@ -15,7 +15,7 @@ define KernelPackage/a8-backlight
   SUBMENU:=Video Support
   TITLE:=A8 GPIO controlled MPP4 backlight
   DEPENDS:=@TARGET_msm89xx +kmod-backlight
-  KCONFIG:=CONFIG_BACKLIGHT_GPIO CONFIG_PINCTRL_SPMI_MPP=y
+  KCONFIG:=CONFIG_BACKLIGHT_GPIO CONFIG_PINCTRL_QCOM_SPMI_PMIC=y
   FILES:=$(LINUX_DIR)/drivers/video/backlight/gpio_backlight.ko
   AUTOLOAD:=$(call AutoProbe,gpio_backlight)
 endef

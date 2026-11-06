@@ -3,6 +3,9 @@ local json = require('luci.jsonc')
 local uci = require('uci')
 local model = require('a8_apn.model')
 local M = {}
+local function pending(c)
+    return next(c:changes('network') or {}) or next(c:changes('a8_apn') or {})
+end
 local function read(path)
     local f = io.open(path, 'r'); if not f then return nil end
     local s = f:read('*a'); f:close(); return s
@@ -28,12 +31,16 @@ local function get_sim(device)
 end
 
 function M.inspect()
-    -- Ignore LuCI's uncommitted /tmp/.uci edits. Only committed configuration
-    -- is used, and the APN worker has its own delta directory.
+    -- A private savedir still reads UCI's default delta path. Defer while
+    -- staged edits exist, so automatic provisioning cannot apply them.
     local c = uci.cursor(nil, '/var/run/a8-apn-uci')
     local settings = c:get_all('a8_apn', 'settings') or {}
     local interface = settings.interface or 'modem'
     if not interface:match('^[%w_]+$') then interface = 'modem' end
+    if pending(c) then
+        return {state='pending-changes', mode=settings.mode or 'auto', candidates={}},
+            c, interface, nil, settings
+    end
     local saved = {}
     c:foreach('a8_apn', 'profile', function(p) p.id=p['.name']; saved[#saved+1]=p end)
     local device = c:get('network', interface, 'device') or 'qcom-soc'
@@ -64,7 +71,11 @@ function M.apply()
     local path = '/var/run/a8-apn.json'
     local previous = json.parse(read(path) or '{}') or {}
     if profile then
-        local changed, err = model.apply(c, interface, profile, settings)
+        -- Reload after the bounded modem queries before touching configuration.
+        c = uci.cursor(nil, '/var/run/a8-apn-uci')
+        local changed, err
+        if pending(c) then changed, err = nil, 'pending-changes'
+        else changed, err = model.apply(c, interface, profile, settings) end
         if changed == nil then status.state=err
         elseif changed or previous.state == 'restart-failed' then
             -- Restart only the cellular interface; Wi-Fi/LAN/USB stay up.

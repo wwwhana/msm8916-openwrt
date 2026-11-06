@@ -48,9 +48,14 @@ event('connected'); assert(event('long') == nil and state.page == 'menu')
 local values={settings={['.type']='settings', allow_roaming='0'},
     travel={['.type']='profile', enabled='1', name='Travel',apn='internet',auth='none',iptype='ipv4v6'}}
 local commits=0
+local pending=false
 package.preload.uci=function() return {cursor=function(_, savedir)
     assert(savedir == '/var/run/a8-menu-uci')
     return {
+        changes=function(_, config)
+            assert(config == 'a8_apn')
+            return pending and {a8_apn={settings={mode='auto'}}} or {}
+        end,
         foreach=function(_,config,kind,fn)
             assert(config == 'a8_apn')
             for id,p in pairs(values) do if p['.type'] == kind then
@@ -74,4 +79,9 @@ assert(values.settings.mode == 'profile' and values.settings.profile == 'travel'
 assert(not service.run({id='profile',profile='deleted'}))
 assert(not service.run({id='arbitrary shell text'}))
 assert(commits == 2)
+pending=true
+assert(#service.profiles() == 0)
+assert(not service.run({id='auto'}))
+assert(not service.run({id='profile',profile='travel'}))
+assert(commits == 2 and values.settings.mode == 'profile')
 print('one-button menu model, view and APN actions passed')

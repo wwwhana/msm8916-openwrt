@@ -15,6 +15,7 @@ return view.extend({
         var states = { 'no-sim': 'SIM 없음', 'waiting-sim': 'SIM 정보 대기 중',
             'sim-locked': 'SIM 잠금 해제 필요', 'no-match': '자동 검색 결과 없음 — 수동 프로파일을 선택하세요',
             'profile-not-found': '저장한 프로파일을 선택하세요', 'ready': '프로파일 준비됨',
+            'pending-changes': '적용하지 않은 설정이 있습니다. 설정을 적용하거나 취소하세요',
             'disabled': '자동 설정 꺼짐' };
         m = new form.Map('a8_apn', 'APN 프로파일',
             'SIM의 본래 통신사 정보로 인터넷 APN을 찾습니다. 로밍 중에는 방문한 통신사의 APN으로 바꾸지 않습니다. ' +

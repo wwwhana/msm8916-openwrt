@@ -56,6 +56,7 @@ apn_line() {
 	mode=$(printf '%s' "$data" | jsonfilter -e '@.mode' 2>/dev/null)
 	case "$state" in
 		disabled) printf 'APN MANUAL' ;;
+		pending-changes) printf 'APN EDITING' ;;
 		no-match|profile-not-found|invalid-*) printf 'APN NEED SETUP' ;;
 		commit-failed|restart-failed|wrong-interface) printf 'APN ERROR' ;;
 		*) case "$mode" in

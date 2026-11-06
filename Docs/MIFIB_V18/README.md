@@ -234,8 +234,11 @@ control. It is not a digital output driving the LED directly. Linux 6.12's
 [`pinctrl-spmi-mpp`](https://github.com/torvalds/linux/blob/v6.12/drivers/pinctrl/qcom/pinctrl-spmi-mpp.c)
 writes `drive-strength` straight to the sink-control register: the DTS value
 `7` encodes the stock 40 mA. `kmod-a8-backlight` enables that MPP controller
-and packages `gpio_backlight.ko`. PWM routing and automatic dimming are not
-implemented in this version.
+and GPIO backlight support. The target already compiles GPIO backlight and
+the PMIC GPIO/MPP driver (`CONFIG_PINCTRL_QCOM_SPMI_PMIC`) into the kernel;
+their separate `.ko` files are therefore absent from the rootfs. Image checks
+accept the required built-in drivers or their modules. PWM routing and
+automatic dimming are not implemented in this version.
 
 ### One-button navigation
 
@@ -269,6 +272,8 @@ Fastboot, EDL and power-off. Profile changes and power actions first show
 Network → APN profiles page. Choosing a profile saves only `a8_apn`
 settings; the existing carrier worker applies it with its normal no-SIM
 handling. No extra APN worker is started.
+If UCI exposes unapplied APN edits, the LCD keeps them unchanged and asks
+to apply or discard them in the web interface before choosing a profile.
 
 Linux reads the PMIC's `KEY_POWER` through evdev, resynchronizes after
 `SYN_DROPPED`, ignores autorepeat and retries if the input device disappears.
@@ -398,6 +403,12 @@ Open **Network → APN profiles**:
   writes. Existing non-default APNs are retained as the selected `previous`
   profile during first installation; the old `jionet` default is also saved
   without deleting it while a SIM is absent.
+
+The worker also defers while its UCI cursor sees unapplied `network` or
+`a8_apn` changes. It reports `pending-changes` / `APN EDITING` and performs
+no interface restart. A private UCI savedir alone does not exclude the
+default staging path; pending changes are checked again after modem queries.
+The LCD likewise refuses to commit staged APN edits with a profile choice.
 
 The bundled Internet APNs come from the public-domain
 [GNOME provider database](https://github.com/GNOME/mobile-broadband-provider-info/tree/c6796724e78483ee34fd999fe1532f3c12d59fa6),

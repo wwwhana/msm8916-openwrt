@@ -7,7 +7,9 @@ function M.profiles()
     local ok, model = pcall(require, 'a8_apn.model')
     if not ok then return {} end
     local result = {}
-    cursor():foreach('a8_apn', 'profile', function(p)
+    local c = cursor()
+    if next(c:changes('a8_apn') or {}) then return result end
+    c:foreach('a8_apn', 'profile', function(p)
         if p.enabled ~= '0' and model.validate(p) then
             result[#result+1] = {id=p['.name'], label=p.name or p['.name']}
         end
@@ -27,6 +29,7 @@ end
 function M.run(action)
     if action.id == 'auto' or action.id == 'profile' then
         local c = cursor()
+        if next(c:changes('a8_apn') or {}) then return false, 'Apply web edits' end
         if c:get('a8_apn', 'settings') ~= 'settings' then return false, 'APN unavailable' end
         if action.id == 'profile' then
             local found = false
