@@ -376,7 +376,8 @@ setup_network() {
     sleep 1
     
     [ "$CFG_RNDIS" = "1" ] && add_to_bridge "${CFG_FUNCTIONS_PATH}/rndis.usb0/ifname"
-    [ "$CFG_ECM" = "1" ] && add_to_bridge "${CFG_FUNCTIONS_PATH}/ecm.usb0/ifname"
+    # setup_gadget gives NCM priority over ECM; no ECM function exists then.
+    [ "$CFG_ECM" = "1" ] && [ "$CFG_NCM" != "1" ] && add_to_bridge "${CFG_FUNCTIONS_PATH}/ecm.usb0/ifname"
     [ "$CFG_NCM" = "1" ] && add_to_bridge "${CFG_FUNCTIONS_PATH}/ncm.usb0/ifname"
     
     uci commit network
@@ -387,8 +388,9 @@ setup_network() {
 
     # Post-reload bringup check
     [ "$CFG_RNDIS" = "1" ] && bring_up_iface "${CFG_FUNCTIONS_PATH}/rndis.usb0/ifname"
-    [ "$CFG_ECM" = "1" ] && bring_up_iface "${CFG_FUNCTIONS_PATH}/ecm.usb0/ifname"
+    [ "$CFG_ECM" = "1" ] && [ "$CFG_NCM" != "1" ] && bring_up_iface "${CFG_FUNCTIONS_PATH}/ecm.usb0/ifname"
     [ "$CFG_NCM" = "1" ] && bring_up_iface "${CFG_FUNCTIONS_PATH}/ncm.usb0/ifname"
+    return 0
 }
 
 # ============================================================================

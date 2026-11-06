@@ -45,6 +45,47 @@ install_package_patches() {\n''' + body + '\n}\ninstall_package_patches\n'
         self.assertNotEqual(self.prepare(target=False)[0], 0)
 
 
+class NetworkTests(unittest.TestCase):
+    def test_network_functions_follow_ncm_priority(self):
+        for rndis, ecm, ncm in [(1, 1, 1), (0, 1, 1), (0, 1, 0), (1, 0, 0)]:
+            with self.subTest(rndis=rndis, ecm=ecm, ncm=ncm), tempfile.TemporaryDirectory() as tmp:
+                base = Path(tmp)
+                active = [name for name, enabled in [('rndis', rndis), ('ecm', ecm and not ncm), ('ncm', ncm)] if enabled]
+                for name in active:
+                    path = base / (name + '.usb0')
+                    path.mkdir()
+                    (path / 'ifname').write_text('usb-' + name)
+                functions = FUNCTIONS
+                for service in ['network', 'dnsmasq', 'odhcpd', 'firewall']:
+                    functions = functions.replace('/etc/init.d/' + service + ' ', 'test_service ' + service + ' ')
+                script = functions + '''
+log() { :; }
+sleep() { :; }
+ip() { echo "ip:$*" >> "$BASE/events"; }
+uci() {
+    if [ "$1:$2" = -q:show ]; then echo "network.lan_dev.name='br-lan'";
+    else echo "uci:$*" >> "$BASE/events"; fi
+}
+test_service() { echo "service:$*" >> "$BASE/events"; }
+CFG_FUNCTIONS_PATH="$BASE"
+CFG_RNDIS="$TEST_RNDIS"
+CFG_ECM="$TEST_ECM"
+CFG_NCM="$TEST_NCM"
+setup_network
+echo completed >> "$BASE/events"
+'''
+                result = subprocess.run([os.environ.get('TEST_SHELL', '/bin/sh'), '-c', script],
+                                        env={**os.environ, 'BASE': tmp, 'TEST_RNDIS': str(rndis),
+                                             'TEST_ECM': str(ecm), 'TEST_NCM': str(ncm)},
+                                        text=True, capture_output=True, timeout=10)
+                self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+                events = (base / 'events').read_text()
+                for name in ['rndis', 'ecm', 'ncm']:
+                    self.assertEqual(('ip:link set usb-' + name + ' master br-lan') in events, name in active)
+                self.assertIn('service:network reload', events)
+                self.assertTrue(events.endswith('completed\n'))
+
+
 class GadgetTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix='usb adb ')

@@ -42,6 +42,22 @@ replaying the stock initialization through the driver's debug command interface
 and redrawing produced **visible text, confirmed by the owner**. This live
 diagnosis is temporary until the corrected DTB is installed; boot-menu output
 and physical button navigation still need checking.
+
+The LCD also received kernel messages through `console=tty0`, overwriting the
+16-column status/menu. The V18 boot command line now keeps only the UART
+console; other boards retain their command lines. The live check temporarily
+lowered console verbosity and redrew the menu; the kernel log remains readable
+through ADB.
+
+USB NCM initially existed as `usb1` but was down and absent from `br-lan`.
+Both ECM and NCM were enabled in UCI. Gadget creation deliberately prefers NCM,
+but network setup still tried the nonexistent ECM function and exited under
+`set -e` before attaching NCM. Network setup now applies the same priority and
+returns success for non-NCM configurations. Four actual shell-function cases
+cover RNDIS/ECM/NCM combinations, bringing the USB suite to 14 checks.
+On this A8, bringing up and bridging NCM restored the Mac's DHCP lease and
+an HTTP response from the management page over its USB interface. Cellular
+internet traffic remains untested with the SIM removed.
 V12's feature matrix does not establish working features on V18.
 
 ## Documentation reviewed before implementation
@@ -751,7 +767,7 @@ device and perform no real EDL operations. They are also included in CI.
 | Standalone USB adbd build | AOSP daemon and bundled libraries compiled and linked on ARM64 Alpine/musl; missing FunctionFS exits with an error. Ubuntu 22.04 host Go 1.18 generates the same BoringSSL error table. This is not an OpenWrt firmware build or device connection test. |
 | `0c75e22` EDL update | Passed: only aboot/boot/rootfs written. Each full partition read-back verified payload, sector padding and untouched tail. All seven radio hashes, including `modemst2`, and both GPT copies stayed unchanged; reset succeeded. |
 | Updated OpenWrt on this A8 | Root USB ACM/ADB observed: Linux 6.12.112, V18 identity, 128×128 RGB565 fb0 and connected power input. GPIO11 was held low by the inverted reset descriptor. Releasing it high and replaying stock initialization restored text, confirmed by the owner. Corrected DTB installation and physical navigation checks are pending. |
-| USB ADB on this A8 | The `usleep` fix was written to the production overlay through Recovery and its hash verified. After a normal reboot, ADB enumerated and root shell, file push and exact framebuffer read-back passed. Unplug/replug remains untested. |
+| USB ADB and NCM on this A8 | The `usleep` fix was written to the production overlay through Recovery and its hash verified. After a normal reboot, ADB enumerated and root shell, file push and exact framebuffer read-back passed. Attaching NCM `usb1` to LAN restored the Mac's DHCP lease and a USB-bound management HTTP response. The source also fixes ECM/NCM priority; 14 USB checks pass. Unplug/replug and cellular traffic remain untested. |
 | Removable SD, WPS and SIM hot-swap | Unverified; SD/WPS support not enabled |
 
 The installed baseline DTB is 54,998 bytes, SHA-256
