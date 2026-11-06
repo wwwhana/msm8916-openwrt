@@ -212,6 +212,13 @@ and installer; production images and a matching recovery image are still
 required for migration. The workflow checks required output files before
 uploading, and `flash.sh`/`firmware.zip` names do not contain `-squashfs-`.
 
+The font-index follow-up at `215dc88` passed bootloader-only
+[run 42204398538](https://github.com/wwwhana/msm8916-openwrt/actions/runs/42204398538).
+Its inspected bundle is `../artifacts/bootloader/`: aboot is 337,696 bytes,
+SHA-256 `1a4d7f90850147c9c1937466d6e19d1832f961486b4333b6473af5e41e703f3f`.
+The other four components match the installed bundle byte for byte.
+This follow-up has not been installed; the installed full image is `0c75e22`.
+
 `firmware.zip` includes all five boot-chain components: `sbl1.mbn`,
 `rpm.mbn`, `tz.mbn`, `hyp.mbn` (qhypstub) and `aboot.mbn` (the compiled
 lk2nd/lk1st build). It is part of the migration, not a replacement for the
@@ -427,6 +434,9 @@ diffconfigs already select BusyBox `usleep`; the manager's sub-second waits
 now use `usleep 100000`. A delayed-endpoint test rejects fractional `sleep`
 and checks that ADB joins after readiness. This source correction and the
 attempted live application are separate from the downloaded image.
+Using that image's actual ARM64 BusyBox, the old polling function fails
+immediately; the corrected function waits and links endpoints that appear
+after 200 ms. This fixture simulates endpoints rather than a USB controller.
 
 On V18, a one-time defaults script enables ADB even when upgrading with the
 old USB configuration preserved. An existing explicit ADB setting is kept.
@@ -510,8 +520,9 @@ not require a SIM.
 
 Hardware-free checks: five APN tests passed, including actual fixture-file
 writes; the selection/apply checks also passed under a standalone Lua 5.1.5
-interpreter matching OpenWrt's Lua generation. Twelve display tests and twelve
-USB/package-preparation tests passed. The latest Linux board harness with
+interpreter matching OpenWrt's Lua generation. Fifteen display tests are
+covered across macOS/Linux, and thirteen USB/package-preparation tests passed.
+The latest Linux board harness with
 self-check passed 57 checks, with zero failures and three expected skips.
 The CI host skips Lua-only cases when no interpreter is installed; menu and
 APN operations are also checked with the image's actual Lua 5.1/libuci in an
@@ -692,7 +703,7 @@ device and perform no real EDL operations. They are also included in CI.
 | Private V18 recovery build and offline inspection | Passed; production kernel and eight matching modules, this unit's firmware/NV, initramfs contents and userspace library checks; 11.36 MiB image |
 | Combined local bundle with the real installer | Correct V18 GPT, boot, system and private recovery files selected; radio preflight passed against original GPT metadata and actual local `saved/` file lengths, with device access blocked |
 | EDL installation on this A8 | Passed: original device GPT and all seven live radio files matched the backup; 20 write commands completed; a final 20-region read-back matched GPT, boot chain, boot/rootfs/recovery, cleared regions and all seven radio backups before reset |
-| First software reset after installation | Reset command succeeded; USB network/console did not reappear during the initial observation. The user subsequently reported running OpenWrt at `192.168.8.1`; agent SSH access timed out, so console inspection remains pending. |
+| First software reset after installation | Reset command succeeded; USB network/console did not reappear during that initial observation. The user subsequently reported running OpenWrt at `192.168.8.1`; agent SSH access timed out. A root console was later observed after the `0c75e22` update. |
 | Wi-Fi, Bluetooth, LTE traffic | Not run |
 | Charging, temperature, reset/recovery, cold boots, traffic soak | Not run |
 | LCD source and initialization checks | Twelve tests passed on macOS, including menu controls; standalone Linux 6.12.112 DTB compile passed. Actual pixels remain unverified. |
@@ -706,7 +717,7 @@ device and perform no real EDL operations. They are also included in CI.
 | Previous r4 ARM64 userspace | All 22 checks passed using that image's Lua 5.1/libuci and musl programs, without source overlays, network access or physical devices. Covers real APN configuration writes/migration, home-vs-visited operator selection, no-SIM/locked-SIM handling, staged edits (including edits during modem queries), retry, RPC, menu actions/confirmations, legacy button suppression and input-reader disconnect/ticks. Modem responses and `ifup` are simulated; power commands are not executed. |
 | One-button menus | Twelve display tests pass, including shared short/long/debounce/startup-held timing, boot-mode selection/timeout, Lua navigation/confirmation and APN settings actions. Host Linux and ARM64 input-reader compilation passes with warnings treated as errors. The deployed ARM64/musl reader stays alive and emits ticks without an input device in the sandbox. Physical LCD/button operation remains unverified. |
 | LuCI display/button follow-up source (`a8-display` 1.0-r5) | Fifteen source checks covered across macOS and Linux (the Linux evdev case runs separately from the macOS Lua/Node cases); Linux board harness: 57 passed, 0 failed, 3 skipped. Thirteen isolated OpenWrt Lua 5.1/libuci checks pass with the new source overlaid on the previous rootfs: real staged/committed settings, original power handler, RPC and V18/V12 init routing. Power commands and devices are simulated. This is not an inspection of a newly built image or a physical LuCI/browser test. |
-| Menu-enabled bootloader | [42155142274](https://github.com/wwwhana/msm8916-openwrt/actions/runs/42155142274) passed for `c0a772d`; all five components are byte-identical in the installed `0c75e22` ZIP. The 337,696-byte aboot fits the actual **1 MiB** partition and was read back after installation. Actual boot-menu output remains unverified; the follow-up font-index correction is source-only. |
+| Menu-enabled bootloader | [42155142274](https://github.com/wwwhana/msm8916-openwrt/actions/runs/42155142274) passed for `c0a772d`; all five components are byte-identical in the installed `0c75e22` ZIP. The 337,696-byte aboot fits the actual **1 MiB** partition and was read back after installation. The font-index correction at `215dc88` also [built successfully](https://github.com/wwwhana/msm8916-openwrt/actions/runs/42204398538) and its artifact checks passed; it is not installed. Actual boot-menu output remains unverified. |
 | Standalone USB adbd build | AOSP daemon and bundled libraries compiled and linked on ARM64 Alpine/musl; missing FunctionFS exits with an error. Ubuntu 22.04 host Go 1.18 generates the same BoringSSL error table. This is not an OpenWrt firmware build or device connection test. |
 | `0c75e22` EDL update | Passed: only aboot/boot/rootfs written. Each full partition read-back verified payload, sector padding and untouched tail. All seven radio hashes, including `modemst2`, and both GPT copies stayed unchanged; reset succeeded. |
 | Updated OpenWrt on this A8 | Root USB ACM shell observed: Linux 6.12.112, V18 identity, new packages, 128×128 RGB565 fb0, brightness 1, running display/controller services and connected power input. The user reports white LCD output; visible navigation is not working yet. Serial later stopped responding; owner power cycle pending. |
