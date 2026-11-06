@@ -18,6 +18,55 @@ spec.loader.exec_module(panel)
 
 
 class PanelTests(unittest.TestCase):
+    def test_actual_boot_menu_held_and_bouncing_button(self):
+        source = (ROOT / 'msm89xx/image/lk2nd-a8/menu.c').read_text()
+        sample = source[source.index('static void sample_button('):source.index('static void set_pin(')]
+        menu = source[source.index('enum a8_boot_choice a8_boot_menu(void)'):]
+        harness = r'''
+#include <assert.h>
+#include <stdlib.h>
+#include "boot-menu.h"
+#define KEY_POWER 1
+static uint32_t clock_ms;
+static int scenario;
+static struct a8_button button;
+static enum a8_button_event queued;
+static uint32_t current_time(void) { return clock_ms; }
+static int lk2nd_keys_pressed(int key) {
+    (void)key;
+    if (scenario == 1) return 1; /* Held throughout startup. */
+    if (scenario == 2) return clock_ms >= 100 && clock_ms < 120; /* 20 ms bounce. */
+    if (scenario == 3) return (clock_ms >= 100 && clock_ms < 200) ||
+                             (clock_ms >= 500 && clock_ms < 1600);
+    if (scenario == 4) return clock_ms >= 100; /* Selecting key never releases. */
+    return 0;
+}
+static void thread_sleep(unsigned ms) {
+    clock_ms += ms;
+    assert(clock_ms <= 7500); /* A stuck menu fails immediately, without waiting. */
+}
+static void draw_menu(const struct a8_boot_state *s, uint32_t now) { (void)s; (void)now; }
+static void draw_row(unsigned row, const char *text) { (void)row; (void)text; }
+int a8_boot_splash(const char *mode) { (void)mode; return 1; }
+'''
+        checks = r'''
+int main(int argc, char **argv) {
+    assert(argc == 2);
+    scenario = atoi(argv[1]);
+    assert(a8_boot_menu() == (scenario == 3 ? A8_RECOVERY : A8_BOOT));
+    return 0;
+}
+'''
+        with tempfile.TemporaryDirectory() as tmp:
+            c, binary = Path(tmp) / 'menu.c', Path(tmp) / 'menu'
+            c.write_text(harness + sample + menu + checks)
+            subprocess.run([os.environ.get('CC', 'cc'), '-std=c99', '-Wall', '-Wextra', '-Werror',
+                            '-I' + str(ROOT / 'msm89xx/image/lk2nd-a8'),
+                            '-I' + str(PACKAGE / 'src'), str(c), '-o', str(binary)], check=True)
+            for scenario in range(5):
+                with self.subTest(scenario=scenario):
+                    subprocess.run([str(binary), str(scenario)], check=True, capture_output=True)
+
     def test_actual_boot_panel_power_sequence(self):
         source = (ROOT / 'msm89xx/image/lk2nd-a8/menu.c').read_text()
         helpers = source[source.index('static int read_pmic('):source.index('static void draw_row(')]

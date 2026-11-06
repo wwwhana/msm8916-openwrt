@@ -184,6 +184,7 @@ enum a8_boot_choice a8_boot_menu(void)
 {
     struct a8_boot_state state={.selected=0, .interactive=0};
     enum a8_boot_choice choice;
+    uint32_t release_started;
     if (!a8_boot_splash("OpenWrt")) return A8_BOOT;
     a8_button_reset(&button, lk2nd_keys_pressed(KEY_POWER), current_time());
     queued=A8_NONE;
@@ -191,15 +192,17 @@ enum a8_boot_choice a8_boot_menu(void)
     draw_menu(&state, state.started);
     for (;;) {
         sample_button();
-        choice=a8_boot_step(&state, queued, button.armed && button.raw, current_time());
+        choice=a8_boot_step(&state, queued, button.armed && button.stable && button.raw, current_time());
         queued=A8_NONE;
         if (choice != A8_WAIT) break;
         draw_menu(&state, current_time());
         thread_sleep(10);
     }
-    /* Ignore the rest of the selecting press before handing control onward. */
+    /* Absorb the selecting press, but keep booting if the key stays asserted. */
     draw_row(5, "Release button");
-    while (lk2nd_keys_pressed(KEY_POWER)) thread_sleep(10);
+    release_started=current_time();
+    while (lk2nd_keys_pressed(KEY_POWER) &&
+           (uint32_t)(current_time()-release_started) < 2000) thread_sleep(10);
     draw_row(5, choice == A8_FASTBOOT ? "Fastboot USB" : choice == A8_EDL ? "Entering EDL" : "Booting...");
     return choice;
 }

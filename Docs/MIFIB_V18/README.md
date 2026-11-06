@@ -47,6 +47,15 @@ After reboot GPIO11 was high, the terminal was 8 rows × 16 columns, and the
 kernel console list contained no `tty0`. Runtime button navigation was observed.
 Bootloader LCD output remains a separate check.
 
+The PM8916 correction at `570da06` passed the
+[bootloader build](https://github.com/wwwhana/msm8916-openwrt/actions/runs/42216038698)
+and [CI checks](https://github.com/wwwhana/msm8916-openwrt/actions/runs/42216043094).
+Only its 345,008-byte aboot was installed; the entire 1 MiB partition, both GPT
+copies and all seven radio partitions were checked after writing. Reset
+succeeded, but normal USB has not yet returned. The physical screen report is
+pending. The previously working aboot is prepared from the existing local
+artifact if recovery is needed.
+
 The LCD also received kernel messages through `console=tty0`, overwriting the
 16-column status/menu. The V18 boot command line now keeps only the UART
 console; other boards retain their command lines. The live check temporarily
@@ -63,9 +72,12 @@ returns success for non-NCM configurations. Four actual shell-function cases
 cover RNDIS/ECM/NCM combinations, bringing the USB suite to 14 checks.
 On this A8, bringing up and bridging NCM restored the Mac's DHCP lease and
 an HTTP response from the management page over its USB interface. That Mac
-network check preceded the follow-up reboot; the router's bridge membership
-was also checked afterwards. Cellular internet is not yet working on the
+network check was repeated after the minimal boot update: the Mac's active
+`en20` received DHCP and a USB-bound request followed the management redirect
+to HTTP 200. This was before the later PM8916 bootloader update above.
+Cellular internet is not yet working on the
 currently inserted LG U+ SIM; see the live findings below.
+The owner confirmed that this same SIM provided LTE internet on stock A8.
 V12's feature matrix does not establish working features on V18.
 
 ### Live SIM, network selection and SMS findings
@@ -399,8 +411,14 @@ L6 range 0/selector 4 and L17 range 0/selector 88, matching 1.8 V and 2.85 V in
 The follow-up uses that encoding for both rails and retains L6's voltage.
 A test compiles the actual panel initialization function against PMIC fixtures,
 checking those observed values and rejecting a different shared voltage before
-any write. Installation and visible bootloader output for this follow-up are
-still pending.
+any write. The correction was installed as described above; its bootloader LCD
+output and return to normal boot remain unconfirmed.
+
+Controller tests also reproduced three indefinite waits in the actual menu
+function: a power key held throughout startup, a 20 ms input bounce, and a
+selecting key that never releases. Navigation now uses the debounced state,
+and release waiting ends after two seconds. Normal timeout and short-then-long
+Recovery selection remain covered. This further correction is not installed.
 The hardware-free Tux test compiles the actual pixel helper and checks its
 RGB565 output, exact image hash and black margins. A preview was inspected;
 visible Tux output on the unit still needs the regulator follow-up and hardware checks.
@@ -814,7 +832,7 @@ device and perform no real EDL operations. They are also included in CI.
 | First software reset after installation | Reset command succeeded; USB network/console did not reappear during that initial observation. The user subsequently reported running OpenWrt at `192.168.8.1`; agent SSH access timed out. A root console was later observed after the `0c75e22` update. |
 | Wi-Fi, Bluetooth, LTE traffic | Not run |
 | Charging, temperature, reset/recovery, cold boots, traffic soak | Not run |
-| LCD source and initialization checks | Seventeen tests on macOS: sixteen passed and the Linux-only evdev check was skipped. Includes the observed PM8916 voltage encoding, panel initialization, splash and menu controls. Runtime text is confirmed by the owner; bootloader output remains pending. |
+| LCD source and initialization checks | Eighteen tests on macOS: seventeen passed and the Linux-only evdev check was skipped. Includes the actual boot controller with held/bouncing inputs, observed PM8916 voltage encoding, panel initialization, splash and menu controls. Runtime text was confirmed before the latest bootloader update; current bootloader output remains pending. |
 | Display kernel configuration | Linux 6.12.112 `listnewconfig` detects the missing Acer EC setting before the fix; no new prompts after the fix, and `syncconfig` succeeds with stdin closed. Required framebuffer/panel/backlight options and both unrelated-driver exclusions verified. |
 | USB ADB source checks | Fourteen tests passed, including delayed descriptors with integer-only sleep, package preparation and ECM/NCM priority. Linux board harness with mutation checks also passed. |
 | Travel APN source checks | Six tests passed on macOS, including the actual Lua model, PIN2/PUK2 handling, supported technology choices, LuCI options and staged-settings guard. Database generation, home-operator selection, manual profiles and existing-daemon integration checked. Earlier isolated-rootfs Lua 5.1/libuci checks passed; modem responses and interface restarts in those checks are simulated. |
@@ -826,7 +844,7 @@ device and perform no real EDL operations. They are also included in CI.
 | Previous r4 ARM64 userspace | All 22 checks passed using that image's Lua 5.1/libuci and musl programs, without source overlays, network access or physical devices. Covers real APN configuration writes/migration, home-vs-visited operator selection, no-SIM/locked-SIM handling, staged edits (including edits during modem queries), retry, RPC, menu actions/confirmations, legacy button suppression and input-reader disconnect/ticks. Modem responses and `ifup` are simulated; power commands are not executed. |
 | One-button menus | Shared timing, boot selection/timeout, Lua navigation and APN actions pass the source checks above. Runtime menus are visible, confirmed by the owner. The actual runtime Fastboot action was executed, Fastboot product checked, and normal OpenWrt restored. Physical boot-menu selection still needs confirmation. |
 | LuCI display/button follow-up source (`a8-display` 1.0-r5) | Fifteen source checks covered across macOS and Linux (the Linux evdev case runs separately from the macOS Lua/Node cases); Linux board harness: 57 passed, 0 failed, 3 skipped. Thirteen isolated OpenWrt Lua 5.1/libuci checks pass with the new source overlaid on the previous rootfs: real staged/committed settings, original power handler, RPC and V18/V12 init routing. Power commands and devices are simulated. This is not an inspection of a newly built image or a physical LuCI/browser test. |
-| Menu-enabled bootloader | The Tux/menu bootloader at `c585927` [built successfully](https://github.com/wwwhana/msm8916-openwrt/actions/runs/42206750250) and its 345,024-byte aboot was installed and read back. Its boot log reports LCD initialization failure. Live PMIC reads identified the incorrect range decoder; the corrected PM8916 source passes the panel test but awaits a new build and installation. |
+| Menu-enabled bootloader | `c585927` was installed but logged LCD initialization failure. The corrected PM8916 bootloader at `570da06` built, was installed and passed full partition/radio/GPT verification. Normal USB has not returned after reset; LCD output and normal boot need confirmation. Further held-key/bounce correction passes the actual-controller test but is not installed. |
 | Standalone USB adbd build | AOSP daemon and bundled libraries compiled and linked on ARM64 Alpine/musl; missing FunctionFS exits with an error. Ubuntu 22.04 host Go 1.18 generates the same BoringSSL error table. This is not an OpenWrt firmware build or device connection test. |
 | `0c75e22` EDL update | Passed: only aboot/boot/rootfs written. Each full partition read-back verified payload, sector padding and untouched tail. All seven radio hashes, including `modemst2`, and both GPT copies stayed unchanged; reset succeeded. |
 | Updated OpenWrt on this A8 | Root USB ACM/ADB observed: Linux 6.12.112, V18 identity, 128×128 RGB565 fb0 and connected power input. The corrected DTB and UART-only/8×16 console image were installed and the full boot partition read back. GPIO11 is high after reboot, text and runtime menus are visible, confirmed by the owner. |
