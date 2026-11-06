@@ -67,6 +67,13 @@ class APNTests(unittest.TestCase):
         self.assertIn('custom-apns.tsv', service)
         self.assertIn('qcom-carrier-autocfg/apns.tsv', service)
 
+    def test_actual_luci_radio_choices(self):
+        node = shutil.which('node')
+        if not node:
+            self.skipTest('Node unavailable')
+        subprocess.run([node, str(Path(__file__).with_name('settings.js')),
+                        str(PACKAGE / 'files/a8-apn.js')], check=True, capture_output=True)
+
 
 if __name__ == '__main__':
     unittest.main()

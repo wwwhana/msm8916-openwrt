@@ -44,8 +44,10 @@ function M.run(action)
         -- The existing carrier worker applies this, including no-SIM handling.
         return true, 'APN saved'
     end
-    local commands = {reboot='/sbin/reboot', recovery='/sbin/reboot recovery',
-        bootloader='/sbin/reboot bootloader', edl='/sbin/reboot edl', poweroff='/sbin/poweroff'}
+    -- BusyBox reboot ignores a mode operand. Use the RESTART2 helper directly
+    -- after syncing; its graceful wrapper would stop this service mid-action.
+    local commands = {reboot='/sbin/reboot', recovery='/sbin/reboot-recovery -f',
+        bootloader='/sbin/reboot-bootloader -f', edl='/sbin/reboot-edl -f', poweroff='/sbin/poweroff'}
     local command=commands[action.id]
     if not command then return false, 'Unknown action' end
     os.execute('/bin/sync')

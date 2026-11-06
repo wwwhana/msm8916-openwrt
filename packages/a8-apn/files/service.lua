@@ -21,13 +21,21 @@ local function get_sim(device)
     local modem = query('--modem=' .. device).modem or {}
     local g = modem.generic or {}
     local path = g.sim or ''
+    local result = {present=false, modem_state=g.state,
+        radio_modes=model.supported_radio_modes(g['supported-modes']),
+        current_radio_mode=model.current_radio_mode(g['current-modes'])}
     if not path:match('^/org/freedesktop/ModemManager1/SIM/%d+$') then
-        return {present=false, modem_state=g.state}
+        return result
     end
     local sim = (query('--sim=' .. path).sim or {}).properties or {}
-    return {present=true, home_plmn=sim['operator-code'], provider=sim['operator-name'],
-        locked=g['unlock-required'] and g['unlock-required'] ~= 'none' and g['unlock-required'] ~= 'unknown',
-        modem_state=g.state}
+    local lock = g['unlock-required']
+    -- ModemManager permits normal operation with PIN2/PUK2 still locked.
+    result.present=true
+    result.home_plmn=sim['operator-code']
+    result.provider=sim['operator-name']
+    result.locked=lock and lock ~= 'none' and lock ~= 'unknown'
+        and lock ~= 'sim-pin2' and lock ~= 'sim-puk2'
+    return result
 end
 
 function M.inspect()
@@ -57,10 +65,18 @@ function M.inspect()
         end
     end
     local chosen, reason = model.choose(settings, saved, db, sim)
+    if chosen and settings.radio_mode and settings.radio_mode ~= 'keep' then
+        local supported=false
+        for _, id in ipairs(sim.radio_modes or {}) do
+            if id == settings.radio_mode then supported=true end
+        end
+        if not supported then chosen=nil; reason='unsupported-radio-mode' end
+    end
     local candidates = {}
     for _, p in ipairs(db) do candidates[#candidates+1] = model.public(p) end
     local status = {state=chosen and 'ready' or reason, mode=settings.mode or 'auto',
         home_plmn=sim.home_plmn, provider=sim.provider, modem_state=sim.modem_state,
+        radio_modes=sim.radio_modes or {}, current_radio_mode=sim.current_radio_mode,
         selected=model.public(chosen), candidates=candidates,
         allow_roaming=settings.allow_roaming == '1'}
     return status, c, interface, chosen, settings

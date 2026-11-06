@@ -18,6 +18,60 @@ spec.loader.exec_module(panel)
 
 
 class PanelTests(unittest.TestCase):
+    def test_actual_boot_panel_power_sequence(self):
+        source = (ROOT / 'msm89xx/image/lk2nd-a8/menu.c').read_text()
+        helpers = source[source.index('static int read_pmic('):source.index('static void draw_row(')]
+        defines = '\n'.join(line for line in source.splitlines() if line.startswith('#define '))
+        harness = r'''
+#include <assert.h>
+#include <stdint.h>
+#include <string.h>
+#include "stock-init.h"
+#define CRITICAL 0
+#define dprintf(...) ((void)0)
+#define mdelay(ms) ((void)(ms))
+#define set_pin(pin, value) ((void)(pin), (void)(value))
+#define output(pin, drive, value) ((void)(pin), (void)(drive), (void)(value))
+#define command(cmd, data, size) ((void)(cmd), (void)(data), (void)(size))
+enum {GPIO_2MA, GPIO_8MA, GPIO_12MA};
+static unsigned char regs[2][65536];
+static unsigned writes;
+static char previous[8][17];
+static int spmi_reg_read(unsigned sid, unsigned reg, unsigned char *v, int priority)
+{ (void)priority; *v=regs[sid][reg]; return 0; }
+static int spmi_reg_write(unsigned sid, unsigned reg, unsigned char *v, int priority)
+{ (void)priority; regs[sid][reg]=*v; writes++; return 0; }
+'''
+        checks = r'''
+int main(void) {
+    /* Actual SBL readings: L6 range 0, selector 4 = 1.8 V. */
+    regs[1][0x4541]=4; regs[1][0x4546]=0xa0;
+    assert(panel_init());
+    assert(regs[1][0x4540] == 0 && regs[1][0x4541] == 4);
+    assert(regs[1][0x4546] == 0xa0);
+    /* Actual stock L17 setting: range 0, selector 88 = 2.85 V. */
+    assert(regs[1][0x5040] == 0 && regs[1][0x5041] == 88);
+    assert(regs[1][0x5045] == 0x80 && regs[1][0x5046] == 0x80);
+    assert(regs[0][0xa340] == 0x60 && regs[0][0xa34c] == 7);
+    assert(regs[0][0xa346] == 0); /* Backlight waits for the first frame. */
+    regs[1][0x4541]=5; writes=0;
+    assert(!panel_init() && writes == 0); /* Shared voltage stays untouched. */
+    regs[1][0x4540]=2; regs[1][0x4541]=4;
+    assert(!panel_init() && writes == 0);
+    return 0;
+}
+'''
+        with tempfile.TemporaryDirectory() as tmp:
+            c = Path(tmp) / 'panel.c'
+            binary = Path(tmp) / 'panel'
+            stock = bytes.fromhex((PACKAGE / 'files/stock-init.hex').read_text())
+            (Path(tmp) / 'stock-init.h').write_text('static const unsigned char stock_init[] = {' +
+                ','.join(str(value) for value in stock) + '};\n')
+            c.write_text(harness + defines + '\n' + helpers + checks)
+            subprocess.run([os.environ.get('CC', 'cc'), '-std=c99', '-Wall', '-Wextra', '-Werror',
+                            '-I' + str(ROOT / 'msm89xx/image/lk2nd-a8'), str(c), '-o', str(binary)], check=True)
+            subprocess.run([str(binary)], check=True)
+
     def test_tux_boot_splash_pixels(self):
         with tempfile.TemporaryDirectory() as tmp:
             source = Path(tmp) / 'splash.c'

@@ -1,5 +1,17 @@
 #!/bin/sh
 tr '\000' '\n' < /proc/device-tree/compatible | grep -qx 'mifib-v18,generic' || exit 0
+# This A8 rejects the generic initial-EPS profile rewrite. It disables the
+# modem before failing, so each netifd retry tears down a valid LTE attach.
+# Migrate the inherited default once; leave later manual/custom choices alone.
+if [ "$(uci -q get a8_apn.settings.eps_migrated)" != 1 ]; then
+	[ -z "$(uci -q changes network)$(uci -q changes a8_apn)" ] || exit 1
+	if [ "$(uci -q get network.modem.init_epsbearer)" = default ]; then
+		uci -q delete network.modem.init_epsbearer
+		uci commit network
+	fi
+	uci set a8_apn.settings.eps_migrated=1
+	uci commit a8_apn
+fi
 [ "$(uci -q get a8_apn.settings.migrated)" != 1 ] || exit 0
 # Preserve a manually configured APN as a named profile on first installation.
 apn="$(uci -q get network.modem.apn)"

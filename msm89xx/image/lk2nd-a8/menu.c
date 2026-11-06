@@ -82,21 +82,22 @@ static int panel_init(void)
     uint32_t voltage;
     /* L6 is shared: preserve SBL's voltage. Never guess a new shared rail value. */
     if (!read_pmic(1, L6_BASE+0x40, &range) || !read_pmic(1, L6_BASE+0x41, &step)) return 0;
-    switch (range & 7) {
-    case 2: voltage=750000+step*12500; break;
-    case 3: voltage=1500000+step*25000; break;
-    case 4: voltage=1750000+step*50000; break;
-    default: return 0;
+    /* PM8916 L6/L17 are ULT PLDOs: range 0, 1.75 V + selector * 12.5 mV.
+     * The older PM8941 PLDO range encoding rejects this board's valid 1.8 V. */
+    if ((range & 7) != 0) {
+        dprintf(CRITICAL, "A8 LCD: unsupported L6 range %u\n", range & 7);
+        return 0;
     }
+    voltage=1750000+step*12500;
     if (voltage != 1800000) {
         dprintf(CRITICAL, "A8 LCD: shared L6 is %u uV; leaving display off\n", voltage);
         return 0;
     }
     if (!read_pmic(1, L6_BASE+0x46, &enabled) ||
         !write_pmic(1, L6_BASE+0x46, enabled | 0x80)) return 0;
-    /* PM8916 L17 PLDO range 3: 1.5 V + 54 * 25 mV = stock 2.85 V. */
+    /* PM8916 L17 ULT PLDO: 1.75 V + 88 * 12.5 mV = stock 2.85 V. */
     if (!write_pmic(1, L17_BASE+0x45, 0x80) ||
-        !write_pmic(1, L17_BASE+0x40, 3) || !write_pmic(1, L17_BASE+0x41, 54) ||
+        !write_pmic(1, L17_BASE+0x40, 0) || !write_pmic(1, L17_BASE+0x41, 88) ||
         !write_pmic(1, L17_BASE+0x46, 0x80)) return 0;
     /* PMIC MPP mode 6 = current sink; raw sink setting 7 = stock 40 mA.
      * Register layout matches Linux pinctrl-spmi-mpp. Enable only after drawing. */

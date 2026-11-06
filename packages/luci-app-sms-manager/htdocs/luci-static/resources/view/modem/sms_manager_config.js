@@ -492,7 +492,17 @@ return view.extend({
 			return fs.exec_direct('/usr/sbin/sms_manager_autoconfig', [ '--force', '--report' ])
 				.then(function(out) {
 					ui.addNotification(null, E('pre', { 'style': 'white-space:pre-wrap' }, out || _('No modem found')), 'info');
-					return uci.load('sms_manager');
+					uci.unload('sms_manager');
+					return uci.load('sms_manager').then(function() {
+						var sections = uci.sections('sms_manager', 'sms_manager');
+						if (!sections.length) return;
+						var section = sections[0]['.name'];
+						['readport', 'sendport', 'ussdport', 'atport', 'pnumber', 'ownnumber'].forEach(function(name) {
+							var fields = m.lookupOption(name, section);
+							var input = fields && fields[0] && fields[0].getUIElement(section);
+							if (input) input.setValue(uci.get('sms_manager', section, name) || '');
+						});
+					});
 				})
 				.catch(function(e) {
 					ui.addNotification(null, E('p', {}, _('Detection failed') + ': ' + e.message), 'error');

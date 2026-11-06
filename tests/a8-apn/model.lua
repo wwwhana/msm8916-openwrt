@@ -74,6 +74,20 @@ assert(values.iptype == 'ipv4' and values.allow_roaming == '1')
 assert(table.concat(values.allowedauth, ',') == 'pap,chap')
 assert(values.username == 'user' and values.password == 'pass')
 assert(model.public(authenticated).password == nil and model.public(authenticated).username == nil)
+local mode_settings={iptype='ipv4', allow_roaming='1'}
+for id, expected in pairs({['lte-preferred']={'4g|3g','4g'}, ['lte-only']={'4g','none'},
+    ['3g-preferred']={'4g|3g','3g'}, ['3g-only']={'3g','none'}, auto={'4g|3g','none'}}) do
+    mode_settings.radio_mode=id
+    assert(model.apply(cursor, 'modem', authenticated, mode_settings) == true)
+    assert(values.allowedmode == expected[1] and values.preferredmode == expected[2])
+    assert(model.apply(cursor, 'modem', authenticated, mode_settings) == false)
+end
+mode_settings.radio_mode='keep'
+before=writes
+assert(model.apply(cursor, 'modem', authenticated, mode_settings) == false and writes == before)
+mode_settings.radio_mode='4g; arbitrary command'
+p, reason=model.apply(cursor, 'modem', authenticated, mode_settings)
+assert(p == nil and reason == 'invalid-radio-mode' and writes == before)
 values.proto='qmi'
 p, reason = model.apply(cursor, 'modem', lgu, auto)
 assert(p == nil and reason == 'wrong-interface')
@@ -83,19 +97,36 @@ p, reason = model.apply(cursor, 'modem', lgu, auto)
 assert(p == nil and reason == 'commit-failed')
 
 -- Staged settings must not reach modem queries, configuration writes or ifup.
-local pending_config
+local pending_config, lock
+local reported_modes={'allowed: 3g; preferred: none', 'allowed: 4g; preferred: none',
+    'allowed: 3g, 4g; preferred: 4g', 'allowed: 4g, 3g; preferred: 3g'}
+local settings = {mode='auto',interface='modem'}
 package.preload.uci=function() return {cursor=function()
     return {
         get_all=function(_, config, section)
             assert(config == 'a8_apn' and section == 'settings')
-            return {mode='auto',interface='modem'}
+            return settings
         end,
         changes=function(_, config)
             return pending_config == config and {[config]={modem={apn='unsaved.example'}}} or {}
+        end,
+        foreach=function(_, config, kind, fn)
+            assert(config == 'a8_apn' and kind == 'profile')
+            fn({['.name']='travel', apn='travel.example', auth='none', iptype='ipv4v6'})
+        end,
+        get=function(_, config, interface, key)
+            assert(config == 'network' and interface == 'modem' and key == 'device')
+            return 'qcom-soc'
         end
     }
 end} end
-package.preload['luci.jsonc']=function() return {parse=function() return {} end} end
+package.preload['luci.jsonc']=function() return {parse=function(value)
+    if value == 'modem' then return {modem={generic={
+        sim='/org/freedesktop/ModemManager1/SIM/0', state='registered', ['unlock-required']=lock,
+        ['supported-modes']=reported_modes, ['current-modes']='allowed: 3g, 4g; preferred: 4g'}}} end
+    if value == 'sim' then return {sim={properties={['operator-code']='45006'}}} end
+    return {}
+end} end
 package.preload['a8_apn.model']=function() return model end
 local open, popen = io.open, io.popen
 io.open=function() return nil end
@@ -105,5 +136,35 @@ for _, config in ipairs({'network','a8_apn'}) do
     pending_config=config
     assert(service.apply().state == 'pending-changes')
 end
+-- Feed mmcli responses through the actual service, including its lock parser.
+pending_config=nil
+settings={enabled='1', mode='profile', interface='modem', profile='travel'}
+io.popen=function(command)
+    local response
+    if command:find('--modem=qcom-soc', 1, true) then response='modem'
+    else
+        assert(command:find('--sim=/org/freedesktop/ModemManager1/SIM/0', 1, true))
+        response='sim'
+    end
+    return {read=function() return response end, close=function() end}
+end
+for _, value in ipairs({false, 'none', 'unknown', 'sim-pin2', 'sim-puk2'}) do
+    lock=value or nil
+    assert(service.inspect().state == 'ready')
+end
+for _, value in ipairs({'sim-pin', 'sim-puk', 'ph-net-pin'}) do
+    lock=value
+    assert(service.inspect().state == 'sim-locked')
+end
+lock='sim-pin2'
+local status=service.inspect()
+assert(#status.radio_modes == 4 and status.current_radio_mode == 'lte-preferred')
+settings.radio_mode='lte-only'
+assert(service.inspect().state == 'ready')
+settings.radio_mode='auto' -- This modem does not advertise 3G+4G without preference.
+assert(service.inspect().state == 'unsupported-radio-mode')
+reported_modes={}
+settings.radio_mode='lte-only'
+assert(service.inspect().state == 'unsupported-radio-mode')
 io.open, io.popen = open, popen
 print('APN selection, manual mode, roaming, credentials and config writes passed')

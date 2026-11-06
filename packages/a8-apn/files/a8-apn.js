@@ -5,6 +5,8 @@
 'require rpc';
 
 var status = rpc.declare({ object: 'a8.apn', method: 'status', expect: {} });
+var radioLabels = { auto: '자동', 'lte-preferred': 'LTE 우선', 'lte-only': 'LTE 전용',
+    '3g-preferred': '3G 우선', '3g-only': '3G 전용' };
 
 return view.extend({
     load: function() {
@@ -15,7 +17,9 @@ return view.extend({
         var states = { 'no-sim': 'SIM 없음', 'waiting-sim': 'SIM 정보 대기 중',
             'sim-locked': 'SIM 잠금 해제 필요', 'no-match': '자동 검색 결과 없음 — 수동 프로파일을 선택하세요',
             'profile-not-found': '저장한 프로파일을 선택하세요', 'ready': '프로파일 준비됨',
+            'applied': '프로파일 적용됨', 'restart-failed': '연결을 다시 시작하지 못했습니다',
             'pending-changes': '적용하지 않은 설정이 있습니다. 설정을 적용하거나 취소하세요',
+            'unsupported-radio-mode': '선택한 통신 방식을 모뎀이 지원하지 않습니다',
             'disabled': '자동 설정 꺼짐' };
         m = new form.Map('a8_apn', 'APN 프로파일',
             'SIM의 본래 통신사 정보로 인터넷 APN을 찾습니다. 로밍 중에는 방문한 통신사의 APN으로 바꾸지 않습니다. ' +
@@ -51,6 +55,17 @@ return view.extend({
         o = s.option(form.Flag, 'allow_roaming', '데이터 로밍 허용');
         o.default = '0'; o.rmempty = false;
         o.description = '여행 SIM과 요금제의 로밍 조건에 맞춰 설정하세요.';
+        o = s.option(form.DummyValue, '_radio_current', '현재 통신 방식');
+        o.cfgvalue = function() { return radioLabels[state.current_radio_mode] || '정보 대기 중'; };
+        o = s.option(form.ListValue, 'radio_mode', '통신 방식');
+        o.value('keep', '현재 설정 유지');
+        var modes = Array.isArray(state.radio_modes) ? state.radio_modes : [];
+        modes.forEach(function(id) { if (radioLabels[id]) o.value(id, radioLabels[id]); });
+        var savedMode = uci.get('a8_apn', 'settings', 'radio_mode');
+        if (radioLabels[savedMode] && modes.indexOf(savedMode) < 0)
+            o.value(savedMode, radioLabels[savedMode]);
+        o.default = 'keep'; o.rmempty = false; o.depends('enabled', '1');
+        o.description = 'LTE 우선은 LTE 연결을 먼저 시도하고, 사용할 수 없으면 3G를 사용합니다.';
 
         s = m.section(form.TypedSection, 'profile', '저장한 프로파일');
         s.addremove = true; s.anonymous = false; s.sortable = true;

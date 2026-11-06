@@ -44,6 +44,21 @@ jobs:
       - name: flash-radio
         run: python3 tests/flash-radio/test_flash_radio.py
 
+      - name: SMS modem and SIM autoconfiguration
+        run: python3 -m unittest discover -s tests/sms-manager -v
+
+      - name: Router Lua test runtime
+        run: sudo apt-get update && sudo apt-get install -y lua5.1
+
+      - name: A8 APN and modem preferences
+        run: python3 -m unittest discover -s tests/a8-apn -v
+
+      - name: A8 display, buttons and boot panel
+        run: python3 -m unittest discover -s tests/a8-display -v
+
+      - name: USB management and network setup
+        run: python3 -m unittest discover -s tests/usb-adb -v
+
       - name: board-profile
         env:
           BASE_REF: ${{ github.base_ref }}

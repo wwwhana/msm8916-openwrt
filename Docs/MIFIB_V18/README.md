@@ -26,10 +26,11 @@ the existing recovery were preserved.
 The A8 subsequently exposed USB ACM and provided a root OpenWrt console:
 Linux **6.12.112**, board `mifib-v18,generic`, `adbd` and `a8-display` present.
 The 128×128 RGB565 framebuffer, backlight brightness 1, display services and
-power input were registered. **The user sees a white LCD**, so visible menus
-and physical navigation initially remained unverified. ADB failed to enumerate
+power input were registered. The LCD was initially white; the owner has now
+confirmed readable status and runtime menus, including after returning from
+Fastboot. ADB failed to enumerate
 because this BusyBox rejects `sleep 0.1`; the manager now uses the available
-`usleep`. The source fix passes 13 USB checks. Applying it through Recovery's
+`usleep`. The source fixes pass 14 USB checks. Applying it through Recovery's
 console to the production overlay, verifying its SHA-256 and rebooting into
 normal OpenWrt produced a working root ADB shell and file transfer.
 
@@ -39,17 +40,20 @@ sets logical 0 then 1. The original `GPIO_ACTIVE_LOW` descriptor inverted that
 sequence and kept the physical active-low reset asserted. Patch 869 now uses
 `GPIO_ACTIVE_HIGH` for this driver's convention. Releasing GPIO11 high,
 replaying the stock initialization through the driver's debug command interface
-and redrawing produced **visible text, confirmed by the owner**. This live
-diagnosis is temporary until the corrected DTB is installed; boot-menu output
-and physical button navigation still need checking.
+and redrawing produced **visible text, confirmed by the owner**. A minimal
+boot-image update derived from `0c75e22` now contains the corrected DTB and the
+`aefba08` command line; its full boot partition was read back after EDL writes.
+After reboot GPIO11 was high, the terminal was 8 rows × 16 columns, and the
+kernel console list contained no `tty0`. Runtime button navigation was observed.
+Bootloader LCD output remains a separate check.
 
 The LCD also received kernel messages through `console=tty0`, overwriting the
 16-column status/menu. The V18 boot command line now keeps only the UART
 console; other boards retain their command lines. The live check temporarily
 lowered console verbosity and redrew the menu; the kernel log remains readable
 through ADB. The observed default font made a 16×16 terminal, whereas the menu
-uses eight rows of sixteen characters. V18 also selects `fbcon=font:VGA8x16`
-explicitly so the compiled-in 8×16 font fills the intended 16×8 grid.
+uses eight rows of sixteen characters. The installed V18 boot image selects
+`fbcon=font:VGA8x16` explicitly, matching the observed 16×8 grid.
 
 USB NCM initially existed as `usb1` but was down and absent from `br-lan`.
 Both ECM and NCM were enabled in UCI. Gadget creation deliberately prefers NCM,
@@ -58,9 +62,49 @@ but network setup still tried the nonexistent ECM function and exited under
 returns success for non-NCM configurations. Four actual shell-function cases
 cover RNDIS/ECM/NCM combinations, bringing the USB suite to 14 checks.
 On this A8, bringing up and bridging NCM restored the Mac's DHCP lease and
-an HTTP response from the management page over its USB interface. Cellular
-internet traffic remains untested with the SIM removed.
+an HTTP response from the management page over its USB interface. That Mac
+network check preceded the follow-up reboot; the router's bridge membership
+was also checked afterwards. Cellular internet is not yet working on the
+currently inserted LG U+ SIM; see the live findings below.
 V12's feature matrix does not establish working features on V18.
+
+### Live SIM, network selection and SMS findings
+
+The modem reported `sim-pin2` while already registered. The APN service
+incorrectly treated every nonempty lock as blocking: this produced `SIM LOCKED`
+and prevented provisioning. It now follows
+[ModemManager's PIN2/PUK2 handling](https://github.com/linux-mobile-broadband/ModemManager/blob/main/src/mm-iface-modem.c),
+while PIN1, PUK1 and network locks still block configuration. The fix was
+installed through ADB; the LCD left `SIM LOCKED` and the APN worker applied the
+profile. Tests feed actual modem responses through the service's lock parser.
+
+APN profiles now expose the current technology preference and a supported-mode
+selector. This unit reports LTE preferred, LTE only, 3G preferred and 3G only;
+readback was checked with LTE preferred and LTE only. Unsupported combinations, including
+3G+LTE without a preference on this firmware, are not offered. The default keeps
+the existing network setting. Explicit choices use netifd's `allowedmode` and
+`preferredmode`; the standard interface editor's mode ordering is preserved.
+
+SMS Manager's autodetection now uses ModemManager's SIM and own-number data
+first, with a corrected QMI `MSISDN:` fallback. On this A8, `+82` was written
+and the saved number was checked against the modem without logging the number.
+Manual numbers survive detection, staged web edits are preserved, and the
+Detect button refreshes the affected fields. No SMS was sent or deleted.
+The messaging interface reports SIM/device storage support and responds to
+message-list queries. IMS/IMSA queries return `InvalidServiceType`, so IMS
+registration and fresh SMS reception are still unverified.
+
+Data connection attempts repeatedly returned `emm-invalid-state` after an
+initial-EPS profile rewrite failed with `invalid-parameter-length`. The
+inherited `init_epsbearer=default` was removed on this unit and the one-time
+V18 migration removes that inherited setting on installation. Custom settings
+and later manual choices are retained. This stops the failing rewrite; it
+does **not** establish a working LTE data session. Subsequent NAS queries show
+`registration-denied`, and ModemManager reports `plmn-not-allowed`; LTE signal
+is present. This is a registration failure, before a usable WAN device exists.
+LuCI's `wan modem: (empty)` therefore has the correct zone assignment but no
+active modem device. Tailscale reports DNS/control
+server reachability failure and `NeedsLogin` while cellular data is down.
 
 ## Documentation reviewed before implementation
 
@@ -240,12 +284,15 @@ and installer; production images and a matching recovery image are still
 required for migration. The workflow checks required output files before
 uploading, and `flash.sh`/`firmware.zip` names do not contain `-squashfs-`.
 
-The font-index follow-up at `215dc88` passed bootloader-only
-[run 42204398538](https://github.com/wwwhana/msm8916-openwrt/actions/runs/42204398538).
-Its inspected bundle is `../artifacts/bootloader/`: aboot is 337,696 bytes,
-SHA-256 `1a4d7f90850147c9c1937466d6e19d1832f961486b4333b6473af5e41e703f3f`.
-The other four components match the installed bundle byte for byte.
-This follow-up has not been installed; the installed full image is `0c75e22`.
+The Tux/font follow-up at `c585927` passed bootloader-only
+[run 42206750250](https://github.com/wwwhana/msm8916-openwrt/actions/runs/42206750250).
+Its aboot is 345,024 bytes, SHA-256
+`94708c238fbb0040396dd298d702b4f999d6cd3f1b96323e916de6a26594a342`.
+It was installed and its complete partition was read back on 2026-11-06.
+The other four boot-chain components were already identical and were not
+rewritten. Both GPT copies and all seven radio partitions remained unchanged.
+The full root filesystem remains `0c75e22`, with the documented live fixes
+in its persistent overlay. Existing backups are reused; do not create duplicates.
 
 `firmware.zip` includes all five boot-chain components: `sbl1.mbn`,
 `rpm.mbn`, `tz.mbn`, `hyp.mbn` (qhypstub) and `aboot.mbn` (the compiled
@@ -345,11 +392,18 @@ reset timing and MPP4 current sink. It checks that shared L6 is already
 at 1.8 V rather than changing its voltage; L17 is set to the stock 2.85 V.
 PMIC writes are read back. If the required shared-rail setting or PMIC
 access is unavailable, it logs the failure and continues normal boot.
-This is an experimental driver: cold-boot output, orientation and actual
-button wiring still need checking on this unit.
+The installed `c585927` logged `A8 LCD unavailable`: its older PLDO range decoder
+rejected PM8916's valid range 0 before drawing anything. Fastboot readings gave
+L6 range 0/selector 4 and L17 range 0/selector 88, matching 1.8 V and 2.85 V in
+[Linux's PM8916 PLDO table](https://github.com/torvalds/linux/blob/v6.12/drivers/regulator/qcom_smd-regulator.c).
+The follow-up uses that encoding for both rails and retains L6's voltage.
+A test compiles the actual panel initialization function against PMIC fixtures,
+checking those observed values and rejecting a different shared voltage before
+any write. Installation and visible bootloader output for this follow-up are
+still pending.
 The hardware-free Tux test compiles the actual pixel helper and checks its
 RGB565 output, exact image hash and black margins. A preview was inspected;
-visible Tux output on the unit is pending installation and hardware checks.
+visible Tux output on the unit still needs the regulator follow-up and hardware checks.
 
 After OpenWrt starts, a press opens the LCD menu. It offers status, automatic
 APN selection or an existing valid saved APN profile, reboot, Recovery,
@@ -358,6 +412,12 @@ Fastboot, EDL and power-off. Profile changes and power actions first show
 Network → APN profiles page. Choosing a profile saves only `a8_apn`
 settings; the existing carrier worker applies it with its normal no-SIM
 handling. No extra APN worker is started.
+
+BusyBox's ordinary `reboot bootloader` ignored the requested mode on this
+image. Runtime menu actions now use the dedicated `reboot-bootloader`,
+`reboot-recovery` and `reboot-edl` helpers after syncing. Fastboot entry through
+the installed menu backend was checked on the device (`lk1st-msm8916`), followed
+by a successful return to OpenWrt and an owner-confirmed runtime display.
 Menu labels use the panel's 16 ASCII columns. Long profile names are clipped
 and non-ASCII characters are replaced for display.
 If UCI exposes unapplied APN edits, the LCD keeps them unchanged and asks
@@ -754,21 +814,22 @@ device and perform no real EDL operations. They are also included in CI.
 | First software reset after installation | Reset command succeeded; USB network/console did not reappear during that initial observation. The user subsequently reported running OpenWrt at `192.168.8.1`; agent SSH access timed out. A root console was later observed after the `0c75e22` update. |
 | Wi-Fi, Bluetooth, LTE traffic | Not run |
 | Charging, temperature, reset/recovery, cold boots, traffic soak | Not run |
-| LCD source and initialization checks | Twelve tests passed on macOS, including menu controls; standalone Linux 6.12.112 DTB compile passed. Actual pixels remain unverified. |
+| LCD source and initialization checks | Seventeen tests on macOS: sixteen passed and the Linux-only evdev check was skipped. Includes the observed PM8916 voltage encoding, panel initialization, splash and menu controls. Runtime text is confirmed by the owner; bootloader output remains pending. |
 | Display kernel configuration | Linux 6.12.112 `listnewconfig` detects the missing Acer EC setting before the fix; no new prompts after the fix, and `syncconfig` succeeds with stdin closed. Required framebuffer/panel/backlight options and both unrelated-driver exclusions verified. |
-| USB ADB source checks | Thirteen tests passed: ten startup/reconnect/fallback/default-setting checks, including delayed descriptors with integer-only `sleep`, plus three package-preparation checks. Linux board harness with mutation checks also passed. |
-| Travel APN source checks | Five tests passed on macOS, including the actual Lua model and staged-settings guard. Database generation, home-operator selection, manual profiles and existing-daemon integration checked; the final image also passes actual Lua 5.1/libuci configuration writes in the isolated rootfs. ModemManager replies and interface restarts are simulated. |
+| USB ADB source checks | Fourteen tests passed, including delayed descriptors with integer-only sleep, package preparation and ECM/NCM priority. Linux board harness with mutation checks also passed. |
+| Travel APN source checks | Six tests passed on macOS, including the actual Lua model, PIN2/PUK2 handling, supported technology choices, LuCI options and staged-settings guard. Database generation, home-operator selection, manual profiles and existing-daemon integration checked. Earlier isolated-rootfs Lua 5.1/libuci checks passed; modem responses and interface restarts in those checks are simulated. |
+| SMS detection source and device checks | Six source tests passed: ModemManager/QMI number detection, manual settings, staged edits and status-only operation. On the A8 the saved number matches ModemManager and the country prefix is +82. Fresh incoming SMS and IMS registration remain unverified. |
 | Previous LCD/ADB/APN/menu build | Source `12ea725` [built successfully](https://github.com/wwwhana/msm8916-openwrt/actions/runs/42163596055); tests [42163630238](https://github.com/wwwhana/msm8916-openwrt/actions/runs/42163630238) passed. Its `a8-display` is `1.0-r4`; this image was inspected but not installed. |
 | Installed LuCI display/button build | Source `0c75e22`: [build 42187058705](https://github.com/wwwhana/msm8916-openwrt/actions/runs/42187058705) and [tests 42187062701](https://github.com/wwwhana/msm8916-openwrt/actions/runs/42187062701) passed. Archive/ZIP checks, metadata CRC and standalone/sysupgrade comparisons passed. `a8-apn` is `1.0-r2`, `a8-display` is `1.0-r5`. Thirteen checks pass in the actual ARM64 image without source overlays. |
 | Updated image sizes and GPT | Boot 6,648,092 bytes / 64 MiB; rootfs 29,369,037 bytes / 128 MiB. Primary/backup GPT CRCs pass and all 17 partition geometries match the installed baseline, including `modemst2` at partition 5, LBA 141314–144385. Generated GUIDs differ; installation retained the existing GPT. |
 | Updated LCD DTB and kernel configuration | DTB 56,444 bytes / 469 nodes, byte-identical to the standalone LCD compile. V18 identity, panel pins/timing/supplies, MPP4 sink drive 7, disabled SDC2 and Bluetooth description verified. Framebuffer console, 8x16 font, PMIC power-key/evdev, FunctionFS, built-in GPIO backlight and PMIC GPIO/MPP controller verified in the actual kernel configuration. |
 | Previous r4 ARM64 userspace | All 22 checks passed using that image's Lua 5.1/libuci and musl programs, without source overlays, network access or physical devices. Covers real APN configuration writes/migration, home-vs-visited operator selection, no-SIM/locked-SIM handling, staged edits (including edits during modem queries), retry, RPC, menu actions/confirmations, legacy button suppression and input-reader disconnect/ticks. Modem responses and `ifup` are simulated; power commands are not executed. |
-| One-button menus | Twelve display tests pass, including shared short/long/debounce/startup-held timing, boot-mode selection/timeout, Lua navigation/confirmation and APN settings actions. Host Linux and ARM64 input-reader compilation passes with warnings treated as errors. The deployed ARM64/musl reader stays alive and emits ticks without an input device in the sandbox. Physical LCD/button operation remains unverified. |
+| One-button menus | Shared timing, boot selection/timeout, Lua navigation and APN actions pass the source checks above. Runtime menus are visible, confirmed by the owner. The actual runtime Fastboot action was executed, Fastboot product checked, and normal OpenWrt restored. Physical boot-menu selection still needs confirmation. |
 | LuCI display/button follow-up source (`a8-display` 1.0-r5) | Fifteen source checks covered across macOS and Linux (the Linux evdev case runs separately from the macOS Lua/Node cases); Linux board harness: 57 passed, 0 failed, 3 skipped. Thirteen isolated OpenWrt Lua 5.1/libuci checks pass with the new source overlaid on the previous rootfs: real staged/committed settings, original power handler, RPC and V18/V12 init routing. Power commands and devices are simulated. This is not an inspection of a newly built image or a physical LuCI/browser test. |
-| Menu-enabled bootloader | [42155142274](https://github.com/wwwhana/msm8916-openwrt/actions/runs/42155142274) passed for `c0a772d`; all five components are byte-identical in the installed `0c75e22` ZIP. The 337,696-byte aboot fits the actual **1 MiB** partition and was read back after installation. The font-index correction at `215dc88` also [built successfully](https://github.com/wwwhana/msm8916-openwrt/actions/runs/42204398538) and its artifact checks passed; it is not installed. Actual boot-menu output remains unverified. |
+| Menu-enabled bootloader | The Tux/menu bootloader at `c585927` [built successfully](https://github.com/wwwhana/msm8916-openwrt/actions/runs/42206750250) and its 345,024-byte aboot was installed and read back. Its boot log reports LCD initialization failure. Live PMIC reads identified the incorrect range decoder; the corrected PM8916 source passes the panel test but awaits a new build and installation. |
 | Standalone USB adbd build | AOSP daemon and bundled libraries compiled and linked on ARM64 Alpine/musl; missing FunctionFS exits with an error. Ubuntu 22.04 host Go 1.18 generates the same BoringSSL error table. This is not an OpenWrt firmware build or device connection test. |
 | `0c75e22` EDL update | Passed: only aboot/boot/rootfs written. Each full partition read-back verified payload, sector padding and untouched tail. All seven radio hashes, including `modemst2`, and both GPT copies stayed unchanged; reset succeeded. |
-| Updated OpenWrt on this A8 | Root USB ACM/ADB observed: Linux 6.12.112, V18 identity, 128×128 RGB565 fb0 and connected power input. GPIO11 was held low by the inverted reset descriptor. Releasing it high and replaying stock initialization restored text, confirmed by the owner. Corrected DTB installation and physical navigation checks are pending. |
+| Updated OpenWrt on this A8 | Root USB ACM/ADB observed: Linux 6.12.112, V18 identity, 128×128 RGB565 fb0 and connected power input. The corrected DTB and UART-only/8×16 console image were installed and the full boot partition read back. GPIO11 is high after reboot, text and runtime menus are visible, confirmed by the owner. |
 | USB ADB and NCM on this A8 | The `usleep` fix was written to the production overlay through Recovery and its hash verified. After a normal reboot, ADB enumerated and root shell, file push and exact framebuffer read-back passed. Attaching NCM `usb1` to LAN restored the Mac's DHCP lease and a USB-bound management HTTP response. The source also fixes ECM/NCM priority; 14 USB checks pass. Unplug/replug and cellular traffic remain untested. |
 | Removable SD, WPS and SIM hot-swap | Unverified; SD/WPS support not enabled |
 

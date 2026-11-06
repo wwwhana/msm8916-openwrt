@@ -103,4 +103,18 @@ assert(#service.profiles() == 0)
 assert(not service.run({id='auto'}))
 assert(not service.run({id='profile',profile='travel'}))
 assert(commits == 2 and values.settings.mode == 'profile')
-print('one-button menu model, view and APN actions passed')
+-- Exercise the actual action dispatcher; capture commands without rebooting.
+local execute=os.execute
+local commands={}
+os.execute=function(command) commands[#commands+1]=command; return 0 end
+for id, command in pairs({reboot='/sbin/reboot', recovery='/sbin/reboot-recovery -f',
+    bootloader='/sbin/reboot-bootloader -f', edl='/sbin/reboot-edl -f', poweroff='/sbin/poweroff'}) do
+    commands={}
+    assert(service.run({id=id}))
+    assert(#commands == 2 and commands[1] == '/bin/sync')
+    assert(commands[2] == command .. ' >/dev/null 2>&1')
+end
+os.execute=function() return 1 end
+assert(not service.run({id='bootloader'}))
+os.execute=execute
+print('one-button menu model, view, APN and reboot actions passed')

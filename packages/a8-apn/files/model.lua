@@ -5,6 +5,47 @@ local function normalize(s) return (s or ''):lower():gsub('[%s%p]', '') end
 local function valid_plmn(s) return type(s) == 'string' and s:match('^%d%d%d%d%d%d?$') end
 M.valid_plmn = valid_plmn
 
+local radio_modes = {
+    {id='auto', allowed='4g|3g', preferred='none'},
+    {id='lte-preferred', allowed='4g|3g', preferred='4g'},
+    {id='lte-only', allowed='4g', preferred='none'},
+    {id='3g-preferred', allowed='4g|3g', preferred='3g'},
+    {id='3g-only', allowed='3g', preferred='none'}
+}
+local function sorted_modes(allowed)
+    local modes={}
+    for mode in allowed:gmatch('[^|,%s]+') do modes[#modes+1]=mode end
+    table.sort(modes)
+    return table.concat(modes, '|')
+end
+local function radio_key(text)
+    if type(text) ~= 'string' then return nil end
+    local allowed, preferred = text:match('^allowed:%s*([^;]+);%s*preferred:%s*(%w+)%s*$')
+    if allowed then return sorted_modes(allowed) .. ';' .. preferred end
+end
+function M.radio_mode(id)
+    if not id or id == 'keep' then return {} end
+    for _, mode in ipairs(radio_modes) do if mode.id == id then return mode end end
+    return nil, 'invalid-radio-mode'
+end
+function M.supported_radio_modes(reported)
+    local supported, result = {}, {}
+    for _, text in ipairs(type(reported) == 'table' and reported or {}) do
+        local key=radio_key(text)
+        if key then supported[key]=true end
+    end
+    for _, mode in ipairs(radio_modes) do
+        if supported[sorted_modes(mode.allowed) .. ';' .. mode.preferred] then result[#result+1]=mode.id end
+    end
+    return result
+end
+function M.current_radio_mode(reported)
+    local key=radio_key(reported)
+    for _, mode in ipairs(radio_modes) do
+        if key == sorted_modes(mode.allowed) .. ';' .. mode.preferred then return mode.id end
+    end
+end
+
 function M.validate(p)
     if type(p) ~= 'table' or type(p.apn) ~= 'string' or #p.apn > 100
         or not p.apn:match('^[A-Za-z0-9][A-Za-z0-9%.%-]*$') then return nil, 'invalid-apn' end
@@ -74,6 +115,8 @@ end
 function M.apply(cursor, interface, profile, settings)
     local valid, err = M.validate(profile)
     if not valid then return nil, err end
+    local radio, radio_err = M.radio_mode(settings.radio_mode)
+    if not radio then return nil, radio_err end
     if settings.iptype ~= 'profile' and not ({ipv4=true,ipv6=true,ipv4v6=true})[settings.iptype] then
         return nil, 'invalid-iptype'
     end
@@ -84,6 +127,10 @@ function M.apply(cursor, interface, profile, settings)
     local values = {apn=profile.apn, username=profile.username or '', password=profile.password or '',
         iptype=settings.iptype ~= 'profile' and settings.iptype or profile.iptype or 'ipv4v6',
         allow_roaming=settings.allow_roaming == '1' and '1' or '0'}
+    if radio.allowed then
+        values.allowedmode=radio.allowed
+        values.preferredmode=radio.preferred
+    end
     local changed = false
     for key, value in pairs(values) do
         if (cursor:get('network', interface, key) or '') ~= value then
