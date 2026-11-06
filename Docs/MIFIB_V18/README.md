@@ -27,11 +27,21 @@ The A8 subsequently exposed USB ACM and provided a root OpenWrt console:
 Linux **6.12.112**, board `mifib-v18,generic`, `adbd` and `a8-display` present.
 The 128×128 RGB565 framebuffer, backlight brightness 1, display services and
 power input were registered. **The user sees a white LCD**, so visible menus
-and physical navigation remain unverified. ADB failed to enumerate because
-this BusyBox rejects `sleep 0.1`; the manager now uses the available `usleep`.
-The source fix passes 13 USB checks. Its attempted live application did not
-return a completion response; the serial shell then stopped responding.
-An owner power cycle is pending before further device checks.
+and physical navigation initially remained unverified. ADB failed to enumerate
+because this BusyBox rejects `sleep 0.1`; the manager now uses the available
+`usleep`. The source fix passes 13 USB checks. Applying it through Recovery's
+console to the production overlay, verifying its SHA-256 and rebooting into
+normal OpenWrt produced a working root ADB shell and file transfer.
+
+Live LCD diagnosis found GPIO11 held **low** after initialization. Linux 6.12's
+[`mipi_dbi_hw_reset()`](https://github.com/torvalds/linux/blob/v6.12/drivers/gpu/drm/drm_mipi_dbi.c#L654)
+sets logical 0 then 1. The original `GPIO_ACTIVE_LOW` descriptor inverted that
+sequence and kept the physical active-low reset asserted. Patch 869 now uses
+`GPIO_ACTIVE_HIGH` for this driver's convention. Releasing GPIO11 high,
+replaying the stock initialization through the driver's debug command interface
+and redrawing produced **visible text, confirmed by the owner**. This live
+diagnosis is temporary until the corrected DTB is installed; boot-menu output
+and physical button navigation still need checking.
 V12's feature matrix does not establish working features on V18.
 
 ## Documentation reviewed before implementation
@@ -251,6 +261,13 @@ The compared stock DTB establishes the following configuration:
 | Reset / data-command | GPIO11 active low / GPIO30 active high; 8 mA drive |
 | Panel / logic supply | L17 at 2.85 V / shared L6 at 1.8 V |
 | Backlight | PM8916 MPP4 current sink, stock maximum 40 mA, manually enabled |
+
+The reset GPIO descriptor intentionally uses `GPIO_ACTIVE_HIGH`: this DBI
+helper pulses logical 0 and finishes at 1, so that setting produces the required
+physical low pulse followed by high. It does not mean the panel's reset wire
+is physically active high. A live measurement with the earlier active-low
+descriptor found GPIO11 stuck low; releasing it and replaying initialization
+restored visible text.
 
 The driver is configured write-only because panel readback wiring is not
 verified. It always resets and initializes the panel. Its standard reset
@@ -733,8 +750,8 @@ device and perform no real EDL operations. They are also included in CI.
 | Menu-enabled bootloader | [42155142274](https://github.com/wwwhana/msm8916-openwrt/actions/runs/42155142274) passed for `c0a772d`; all five components are byte-identical in the installed `0c75e22` ZIP. The 337,696-byte aboot fits the actual **1 MiB** partition and was read back after installation. The font-index correction at `215dc88` also [built successfully](https://github.com/wwwhana/msm8916-openwrt/actions/runs/42204398538) and its artifact checks passed; it is not installed. Actual boot-menu output remains unverified. |
 | Standalone USB adbd build | AOSP daemon and bundled libraries compiled and linked on ARM64 Alpine/musl; missing FunctionFS exits with an error. Ubuntu 22.04 host Go 1.18 generates the same BoringSSL error table. This is not an OpenWrt firmware build or device connection test. |
 | `0c75e22` EDL update | Passed: only aboot/boot/rootfs written. Each full partition read-back verified payload, sector padding and untouched tail. All seven radio hashes, including `modemst2`, and both GPT copies stayed unchanged; reset succeeded. |
-| Updated OpenWrt on this A8 | Root USB ACM shell observed: Linux 6.12.112, V18 identity, new packages, 128×128 RGB565 fb0, brightness 1, running display/controller services and connected power input. The user reports white LCD output; visible navigation is not working yet. Serial later stopped responding; owner power cycle pending. |
-| USB ADB on this A8 | Enabled in UCI, but no ADB interface enumerated. Boot logs exposed unsupported fractional `sleep`; the `usleep` source fix passes 13 USB checks. Live application, ADB shell/file transfer and unplug/replug remain unconfirmed. |
+| Updated OpenWrt on this A8 | Root USB ACM/ADB observed: Linux 6.12.112, V18 identity, 128×128 RGB565 fb0 and connected power input. GPIO11 was held low by the inverted reset descriptor. Releasing it high and replaying stock initialization restored text, confirmed by the owner. Corrected DTB installation and physical navigation checks are pending. |
+| USB ADB on this A8 | The `usleep` fix was written to the production overlay through Recovery and its hash verified. After a normal reboot, ADB enumerated and root shell, file push and exact framebuffer read-back passed. Unplug/replug remains untested. |
 | Removable SD, WPS and SIM hot-swap | Unverified; SD/WPS support not enabled |
 
 The installed baseline DTB is 54,998 bytes, SHA-256

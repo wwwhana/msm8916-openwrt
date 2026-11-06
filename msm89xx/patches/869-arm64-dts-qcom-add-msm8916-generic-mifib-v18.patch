@@ -7,7 +7,7 @@ sink backlight. Do not drive the V12-specific status lamp pins.
 
 --- /dev/null
 +++ b/arch/arm64/boot/dts/qcom/msm8916-generic-mifib-v18.dts
-@@ -0,0 +1,132 @@
+@@ -0,0 +1,134 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * A8, PCB HM-MiFiB-V18. The closest stock MTP DTB has the same 885
@@ -52,7 +52,9 @@ sink backlight. Do not drive the V12-specific status lamp pins.
 +		compatible = "mifib-v18,gc9107", "panel-mipi-dbi-spi";
 +		reg = <0>;
 +		spi-max-frequency = <16000000>;
-+		reset-gpios = <&tlmm 11 GPIO_ACTIVE_LOW>;
++		/* DBI's reset helper ends at logical 1: keep the wire high.
++		 * ACTIVE_LOW would leave the physical active-low reset asserted. */
++		reset-gpios = <&tlmm 11 GPIO_ACTIVE_HIGH>;
 +		dc-gpios = <&tlmm 30 GPIO_ACTIVE_HIGH>;
 +		pinctrl-names = "default";
 +		pinctrl-0 = <&lcd_control_default>;
