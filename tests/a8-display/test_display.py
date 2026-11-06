@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import subprocess
 import shutil
+import sys
 import tempfile
 import unittest
 
@@ -17,6 +18,14 @@ spec.loader.exec_module(panel)
 
 
 class PanelTests(unittest.TestCase):
+    @unittest.skipUnless(sys.platform.startswith('linux'), 'Linux evdev headers required')
+    def test_evdev_reader_protocol(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            binary = str(Path(tmp) / 'reader')
+            subprocess.run([os.environ.get('CC', 'cc'), '-std=c99', '-Wall', '-Wextra', '-Werror',
+                            str(Path(__file__).with_name('reader.c')), '-o', binary], check=True)
+            subprocess.run([binary], check=True)
+
     def test_shared_button_and_boot_menu_timing(self):
         with tempfile.TemporaryDirectory() as tmp:
             binary = str(Path(tmp) / 'button')
@@ -32,6 +41,20 @@ class PanelTests(unittest.TestCase):
             self.skipTest('Lua unavailable; run menu.lua with the router Lua 5.1 runtime')
         subprocess.run([lua, str(Path(__file__).with_name('menu.lua')),
                         str(PACKAGE / 'files'), str(ROOT / 'packages/a8-apn/files/model.lua')], check=True)
+
+    def test_controller_lcd_and_led_routing(self):
+        lua = next((shutil.which(x) for x in ('lua5.1', 'lua', 'lua5.4', 'luajit') if shutil.which(x)), None)
+        if not lua:
+            self.skipTest('Lua unavailable')
+        subprocess.run([lua, str(Path(__file__).with_name('controller.lua')),
+                        str(PACKAGE / 'files')], check=True)
+
+    def test_luci_hardware_options(self):
+        node = shutil.which('node')
+        if not node:
+            self.skipTest('Node unavailable')
+        subprocess.run([node, str(Path(__file__).with_name('settings.js')),
+                        str(PACKAGE / 'files/a8-device.js')], check=True)
 
     def test_display_package_can_be_selected(self):
         # OpenWrt propagates the DRM packages' @DISPLAY_SUPPORT dependency

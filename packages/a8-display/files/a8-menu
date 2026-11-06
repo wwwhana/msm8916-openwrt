@@ -3,25 +3,78 @@
 local model=require('a8_display.model')
 local view=require('a8_display.view')
 local service=require('a8_display.service')
+local device=require('a8_display.device')
+local json=require('luci.jsonc')
+if not device.supported() then os.exit(0) end
+local config=device.settings()
 local state=model.new()
-local tty=assert(io.open('/dev/tty1', 'w'))
-tty:setvbuf('no')
-tty:write('\27[?25l\27[?7l\27[9;0]\27[37;40m\27[2J')
-local input=assert(io.popen('/usr/libexec/a8-button', 'r'))
-local previous
-local function draw()
-    local frame=view.frame(state, service.status())
-    if frame ~= previous then tty:write(frame); previous=frame end
+os.remove('/var/run/powerbtn.dbl')
+local input=assert(io.popen('/usr/libexec/a8-button' ..
+    (config.display == 'lcd' and config.buttons == 'side' and ' --side' or ''), 'r'))
+local tty, previous, route, last_report, lcd_available
+local pid=device.pid()
+local function close_screen()
+    if tty then tty:close(); tty=nil end
+    route=nil; previous=nil
+    model.event(state, 'resync')
 end
-draw()
+local function open_screen()
+    local screen=io.open('/dev/tty1', 'w')
+    if not screen then return end
+    screen:setvbuf('no')
+    if screen:write('\27[?25l\27[?7l\27[9;0]\27[37;40m\27[2J') and config.display == 'lcd' then
+        tty=screen
+    else screen:close() end
+end
+local function report()
+    local data=json.stringify({pid=pid, display=tty and 'lcd' or 'led', buttons=state.mode,
+                              connected=state.connected})
+    if data == last_report then return end
+    local f=io.open('/var/run/a8-device.json.new', 'w')
+    if f then
+        f:write(data); f:close()
+        if os.rename('/var/run/a8-device.json.new', '/var/run/a8-device.json') then last_report=data end
+    end
+end
+local function draw()
+    if not tty then return end
+    local frame=view.frame(state, service.status())
+    if frame ~= previous then
+        if tty:write(frame) then previous=frame else close_screen() end
+    end
+end
+report()
 for event in input:lines() do
-    local action=model.event(state, event, event == 'long' and service.profiles() or nil)
-    if action then
-        model.result(state, true, 'Please wait')
-        draw()
-        local ok, message=service.run(action)
-        model.result(state, ok, message)
+    if event == 'lcd-ready' or event == 'lcd-missing' then
+        os.remove('/var/run/powerbtn.dbl')
+        close_screen()
+        lcd_available=event == 'lcd-ready'
+        if lcd_available then open_screen() end
+    elseif event == 'pressed' then
+        route=tty and 'lcd' or 'led'
+    elseif event:match('^released:') then
+        if route == 'led' and not tty then device.legacy_release(event) end
+        route=nil
+    else
+        if event == 'tick' and lcd_available and config.display == 'lcd' and not tty then open_screen() end
+        if event == 'connected' or event == 'disconnected' or event == 'resync' or event:match('^mode%-') then
+            os.remove('/var/run/powerbtn.dbl')
+            route=nil
+            model.event(state, event)
+        elseif tty and (event == 'up' or event == 'down' or route == 'lcd') then
+            local selecting=event == 'long' or (event == 'short' and state.mode == 'side')
+            local action=model.event(state, event, selecting and service.profiles() or nil)
+            if action then
+                model.result(state, true, 'Please wait')
+                draw()
+                local ok, message=service.run(action)
+                model.result(state, ok, message)
+            end
+        end
     end
     draw()
+    report()
 end
-input:close(); tty:close(); os.exit(1)
+input:close(); if tty then tty:close() end
+os.remove('/var/run/a8-device.json'); os.remove('/var/run/a8-device.json.new')
+os.exit(1)

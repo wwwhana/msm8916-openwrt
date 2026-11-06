@@ -18,8 +18,8 @@ function M.frame(s, status)
             local index = first+i
             rows[i+3] = s.entries[index] and ((index == s.selection and '> ' or '  ') .. s.entries[index].label) or ''
         end
-        rows[7]='Short: next'
-        rows[8]='Hold 1s: select'
+        rows[7]=s.mode == 'side' and 'Side: up/down' or 'Short: next'
+        rows[8]=s.mode == 'side' and 'Power: select' or 'Hold 1s: select'
     end
     for i=1,8 do rows[i]=line(rows[i]) end
     return '\27[H' .. table.concat(rows, '\r\n')

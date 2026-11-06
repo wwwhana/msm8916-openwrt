@@ -86,20 +86,13 @@ main() {
 	# Modules may finish probing after procd starts this service.
 	while [ ! -e /sys/class/graphics/fb0/name ] || [ ! -c /dev/tty1 ]; do sleep 2; done
 	umask 077
-	# Keep modem queries away from the input/menu process.
-	(
-		trap 'rm -f /var/run/a8-display.status.new; exit' TERM INT
-		while :; do
-			show_status > /var/run/a8-display.status.new
-			mv /var/run/a8-display.status.new /var/run/a8-display.status
-			sleep 5
-		done
-	) &
-	status_pid=$!
-	trap 'kill "$status_pid" "$menu_pid" 2>/dev/null; wait; exit' TERM INT EXIT
-	/usr/libexec/a8-menu &
-	menu_pid=$!
-	wait "$menu_pid"
+	# The power-key service runs the menu independently of slow modem queries.
+	trap 'rm -f /var/run/a8-display.status.new; exit' TERM INT
+	while :; do
+		show_status > /var/run/a8-display.status.new
+		mv /var/run/a8-display.status.new /var/run/a8-display.status
+		sleep 5
+	done
 }
 
 if [ "$1" != --source-only ]; then main; fi

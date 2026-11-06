@@ -1,0 +1,10 @@
+#!/usr/bin/lua
+-- SPDX-License-Identifier: GPL-2.0-only
+local device=require('a8_display.device')
+if arg[1] == 'status' then
+    print(require('luci.jsonc').stringify(device.status()))
+elseif arg[1] == 'lcd-enabled' then
+    os.exit(device.supported() and device.settings().display == 'lcd' and 0 or 1)
+else
+    os.exit(1)
+end

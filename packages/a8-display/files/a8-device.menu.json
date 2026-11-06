@@ -1,0 +1,8 @@
+{
+  "admin/system/a8-device": {
+    "title": "화면·버튼",
+    "order": 45,
+    "action": { "type": "view", "path": "a8-device" },
+    "depends": { "acl": ["a8-device"], "uci": { "a8_device": true } }
+  }
+}

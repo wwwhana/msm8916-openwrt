@@ -1,0 +1,7 @@
+{
+  "a8-device": {
+    "description": "A8 display and buttons",
+    "read": { "uci": ["a8_device"], "ubus": { "a8.device": ["status"] } },
+    "write": { "uci": ["a8_device"] }
+  }
+}

@@ -47,4 +47,11 @@ static inline enum a8_button_event a8_button_poll(struct a8_button *b, int down,
     }
     return event;
 }
+
+static inline int a8_navigation_poll(struct a8_button *b, int down, uint32_t now)
+{
+    int was_down = b->stable, armed = b->armed;
+    a8_button_poll(b, down, now);
+    return armed && !was_down && b->stable;
+}
 #endif

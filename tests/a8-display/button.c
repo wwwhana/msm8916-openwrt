@@ -44,6 +44,18 @@ int main(void)
     assert(a8_button_poll(&b, 1, UINT32_MAX-100) == A8_NONE);
     assert(a8_button_poll(&b, 1, UINT32_MAX-70) == A8_NONE);
     assert(a8_button_poll(&b, 1, 899) == A8_LONG);
+    /* Side navigation moves on a debounced press, once per hold. */
+    a8_button_reset(&b, 1, 0);
+    assert(!a8_navigation_poll(&b, 1, 5000));
+    assert(!a8_navigation_poll(&b, 0, 5100));
+    assert(!a8_navigation_poll(&b, 0, 5130));
+    assert(!a8_navigation_poll(&b, 1, 5200));
+    assert(a8_navigation_poll(&b, 1, 5230));
+    assert(!a8_navigation_poll(&b, 1, 7000));
+    assert(!a8_navigation_poll(&b, 0, 7100));
+    assert(!a8_navigation_poll(&b, 0, 7130));
+    assert(!a8_navigation_poll(&b, 1, 7200));
+    assert(a8_navigation_poll(&b, 1, 7230));
     assert(a8_boot_step(&boot, A8_NONE, 0, 4999) == A8_WAIT);
     assert(a8_boot_step(&boot, A8_NONE, 0, 5000) == A8_BOOT);
     boot.started=0; boot.interactive=0;

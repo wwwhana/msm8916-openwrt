@@ -20,11 +20,6 @@
 # script.  To shut down, hold ~LONG_HOLD seconds and release; holding past
 # ~10-15 s lets the PMIC hard-reset (reboot) take over.
 
-if [ -x /usr/libexec/a8-button ] &&
-   tr '\000' '\n' < /proc/device-tree/compatible | grep -qx 'mifib-v18,generic'; then
-    exit 0
-fi
-
 SHORT_MAX=2
 LONG_HOLD=4
 DBL_WINDOW=800
@@ -85,6 +80,9 @@ elif [ "$SEEN" -ge "$LONG_HOLD" ] 2>/dev/null; then
     fi
 
     logger -t power-button "Power button held ${SEEN}s: powering off"
+
+    # BOARDS: ALL-BOARDS -- shutdown also works on variants without status LEDs.
+    [ -d "$LED" ] || exec /sbin/poweroff
 
     max=$(cat "$LED/max_brightness" 2>/dev/null)
     [ -n "$max" ] || max=1

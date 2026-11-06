@@ -1,15 +1,22 @@
 # The power button
 
-Only **two** boards in this project have a power button:
+These boards in this project describe a power button:
 
 | Board | Power key | Reset button |
 | :---- | :-------- | :----------- |
 | `mifib-v12` | `pm8941_pwrkey` (PMIC PON) | GPIO 102, also the recovery key |
 | `mf800b` | `pm8941_pwrkey` (PMIC PON) | GPIO 102, also the recovery key |
+| `mifib-v18` (A8 LCD) | `pm8941_pwrkey` (PMIC PON) | GPIO 102 in the initial description; physical behaviour pending |
 | `hmuf02v5`, `uf02`, `ufi001b`, `ufi003`, `uz801` | none | GPIO 37 / GPIO 23 — plain reset, no power key |
 
-On the buttonless boards `pwrkey-monitor` is not started and the handler is
-never invoked; nothing else changes.
+On buttonless boards the monitor finds no PMIC power-key device.
+
+V18 with `a8-display` uses the configurable LCD controller described in
+[the V18 notes](MIFIB_V18/README.md#luci-display-and-button-choices).
+**System → 화면·버튼** chooses LCD/LED-only and power/side controls. With an
+LCD menu, short/long power presses navigate/select. LED-only mode, or an
+unavailable framebuffer, uses the original behaviour below. The bootloader
+menu is configured separately.
 
 ---
 
@@ -53,7 +60,14 @@ pm8941_pwrkey  (evdev, /dev/input/eventN)
 plain evdev device and never produces those uevents, so the monitor decodes it
 and supplies the same `ACTION`/`SEEN`/`BUTTON` environment.
 
-Implementation notes (all learned the hard way):
+On V18 with the LCD package installed, the same init service starts
+`/usr/libexec/a8-menu`. Its compiled evdev reader emits debounced presses and
+release durations, with an exclusive input grab. The controller forwards
+release durations to the original handler only while no LCD menu is active.
+Changing modes clears the old double-click state. It retries input devices
+every five seconds and drops pending selections after input loss/overflow.
+
+Legacy byte-stream bridge notes:
 
 * the key is **`0x74`** (`KEY_POWER` = 116) inside an `EV_KEY` record; do not
   trust the `capabilities/key` bitmap on this kernel.

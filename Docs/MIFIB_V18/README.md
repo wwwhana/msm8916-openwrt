@@ -23,6 +23,10 @@ installed; visible LCD output, physical buttons and USB ADB on this unit
 remain unverified.
 V12's feature matrix does not establish working features on V18.
 
+The follow-up `a8-display` **1.0-r5** source adds LuCI display/button choices.
+Its local source and isolated OpenWrt runtime checks are described below;
+the previously downloaded `12ea725` image still contains **1.0-r4**.
+
 ## Documentation reviewed before implementation
 
 - [Adding a board](../ADDING_A_DEVICE_BOARD.md), [architecture](../ARCHITECTURE.md),
@@ -296,13 +300,51 @@ to apply or discard them in the web interface before choosing a profile.
 
 Linux reads the PMIC's `KEY_POWER` through evdev, resynchronizes after
 `SYN_DROPPED`, ignores autorepeat and retries if the input device disappears.
-It uses an exclusive input grab. On V18 with this package installed, the
-legacy power monitor and power-button handler are disabled so menu clicks
-cannot also trigger their double-click reboot/long-press shutdown. Other
-boards keep their existing button handling. The hardware's much longer
-power-key reset is unchanged. Modem status queries run separately so they
+It uses an exclusive input grab. On V18, `pwrkey-monitor` starts `a8-menu`
+instead of the legacy byte-stream bridge. This single controller routes a
+press either to the visible LCD menu or to the original power-button handler.
+Menu clicks cannot also trigger double-click reboot/long-press shutdown.
+Other boards keep their existing bridge. The hardware's much longer power-key
+reset is unchanged. Modem status queries run separately so they
 cannot block button timing. Lua separates menu state, display layout and
 status/APN/power operations in `a8_display` modules.
+
+### LuCI display and button choices
+
+**System → 화면·버튼** stores the two independent choices in
+`/etc/config/a8_device`:
+
+| Setting | Values and behaviour |
+| --- | --- |
+| Display | **LCD menu** (this board's default), or **LED only**. LED only clears the LCD menu and uses the existing power-button behaviour; it does not assign any LED pins. |
+| Menu controls | **Power only**: short = next, one-second hold = select. **Side + power**: side keys move up/down, power selects. The side choice is offered only when the kernel exposes both side keys, or when preserving an existing side preference. |
+
+Side navigation accepts only `KEY_VOLUMEUP` and `KEY_VOLUMEDOWN` together on
+an evdev device named `gpio-keys`. It never interprets `KEY_RESTART` as a
+navigation key. This V18 DTS does not yet expose the two side keys; no guessed
+WPS GPIO is enabled. With a saved side preference but missing side input, the
+controller uses the power-only menu. Losing a device, changing input mode or
+resynchronizing discards pending confirmations. Navigation keys ignore a held
+startup key and move once per debounced press.
+
+When the framebuffer/terminal is missing or cannot be opened, the controller
+uses the original power handler instead of an invisible menu. It preserves
+the two-short-press reboot and four-second release shutdown behaviour. A press
+started in a different display/input state is discarded; switching modes also
+clears any old double-click state. The RST handler's five-second factory reset
+is unchanged, and RST is not used for menu navigation.
+
+Save alone stages edits. The controller loads the absolute config path so
+unapplied UCI deltas cannot change the button mode. Save & Apply reloads the
+two services through the `a8_device` trigger. The status collector stops in
+LED mode; the single power-key controller remains active. See
+[libuci's absolute-path load](https://github.com/openwrt/uci/blob/master/file.c)
+for the committed-config behaviour.
+
+These choices affect OpenWrt userspace. They do not switch DTS pin mappings,
+change the bootloader menu or identify a physical LCD: the GC9107 is configured
+write-only. The reported LED-only sales variants are not identified as V12 or
+given a new board profile without their own PCB/stock-firmware evidence.
 
 The new boot menu is part of **`aboot.mbn`** in the firmware ZIP. Updating
 only boot/rootfs adds the OpenWrt menu but cannot add the boot menu to an
@@ -315,8 +357,8 @@ battery voltage, charging state, Wi-Fi up/down, ModemManager state, LAN IPv4
 address and uptime. Missing readings display `--`; an unavailable capacity
 is never presented as 100%. It refreshes every five seconds plus the time
 needed for bounded status queries. Linux's framebuffer console supplies the
-font and handles framebuffer pixel format and row stride; the service writes
-eight fixed-width rows to `/dev/tty1`. It leaves the serial login available
+font and handles framebuffer pixel format and row stride; `a8-menu` writes
+the collected status as eight fixed-width rows to `/dev/tty1`. It leaves the serial login available
 and keeps the screen lit. Both service and executable check the A8 board
 identity before running.
 
@@ -342,6 +384,7 @@ cat /sys/class/graphics/fb0/virtual_size
 cat /sys/class/backlight/backlight/brightness
 dmesg | grep -E 'mipi.dbi|drm|backlight|mpp|spi'
 /etc/init.d/a8-display restart
+/etc/init.d/pwrkey-monitor restart
 ```
 
 Check visible text, orientation, cold boots and power consumption on the
@@ -641,6 +684,7 @@ device and perform no real EDL operations. They are also included in CI.
 | Updated LCD DTB and kernel configuration | DTB 56,444 bytes / 469 nodes, byte-identical to the standalone LCD compile. V18 identity, panel pins/timing/supplies, MPP4 sink drive 7, disabled SDC2 and Bluetooth description verified. Framebuffer console, 8x16 font, PMIC power-key/evdev, FunctionFS, built-in GPIO backlight and PMIC GPIO/MPP controller verified in the actual kernel configuration. |
 | Actual ARM64 image userspace | All 22 checks passed using the final image's Lua 5.1/libuci and musl programs, without source overlays, network access or physical devices. Covers real APN configuration writes/migration, home-vs-visited operator selection, no-SIM/locked-SIM handling, staged edits (including edits during modem queries), retry, RPC, menu actions/confirmations, legacy button suppression and input-reader disconnect/ticks. Modem responses and `ifup` are simulated; power commands are not executed. |
 | One-button menus | Twelve display tests pass, including shared short/long/debounce/startup-held timing, boot-mode selection/timeout, Lua navigation/confirmation and APN settings actions. Host Linux and ARM64 input-reader compilation passes with warnings treated as errors. The deployed ARM64/musl reader stays alive and emits ticks without an input device in the sandbox. Physical LCD/button operation remains unverified. |
+| LuCI display/button follow-up source (`a8-display` 1.0-r5) | Fifteen source checks covered across macOS and Linux (the Linux evdev case runs separately from the macOS Lua/Node cases); Linux board harness: 57 passed, 0 failed, 3 skipped. Thirteen isolated OpenWrt Lua 5.1/libuci checks pass with the new source overlaid on the previous rootfs: real staged/committed settings, original power handler, RPC and V18/V12 init routing. Power commands and devices are simulated. This is not an inspection of a newly built image or a physical LuCI/browser test. |
 | Menu-enabled bootloader | [42155142274](https://github.com/wwwhana/msm8916-openwrt/actions/runs/42155142274) passed for `c0a772d`, whose bootloader inputs are unchanged in `12ea725`. The downloaded archive digest/ZIP CRCs and all five component sizes passed. The 337,696-byte aboot contains the visible menu/control strings and fits its 512 KiB partition. Actual boot-menu output remains unverified. |
 | Standalone USB adbd build | AOSP daemon and bundled libraries compiled and linked on ARM64 Alpine/musl; missing FunctionFS exits with an error. Ubuntu 22.04 host Go 1.18 generates the same BoringSSL error table. This is not an OpenWrt firmware build or device connection test. |
 | USB ADB on this A8 | Not run; shell, file transfer and unplug/replug require the new image and an accessible USB connection |

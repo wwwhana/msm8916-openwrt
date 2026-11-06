@@ -7,9 +7,14 @@ local root = {
     {label='Power off', id='poweroff'}, {label='Back', id='back'}
 }
 function M.new()
-    return {page='status', selection=1, entries=root, connected=false}
+    return {page='status', selection=1, entries=root, connected=false, mode='power'}
 end
 function M.event(s, event, profiles)
+    if event == 'mode-power' or event == 'mode-side' or event == 'resync' then
+        if event ~= 'resync' then s.mode=event == 'mode-side' and 'side' or 'power' end
+        s.page='status'; s.selection=1; s.entries=root; s.pending=nil
+        return
+    end
     if event == 'connected' or event == 'disconnected' then
         s.connected = event == 'connected'
         if not s.connected then
@@ -17,12 +22,17 @@ function M.event(s, event, profiles)
         end
         return
     end
-    if event ~= 'short' and event ~= 'long' then return end
+    if not s.connected then return end
+    local next_item=(event == 'down' and s.mode == 'side') or (event == 'short' and s.mode == 'power')
+    local previous=event == 'up' and s.mode == 'side'
+    local select=event == 'long' or (event == 'short' and s.mode == 'side')
+    if not next_item and not previous and not select then return end
     s.message = nil
     if s.page == 'status' or s.page == 'message' then
         s.page='menu'; s.selection=1; s.entries=root; return
     end
-    if event == 'short' then s.selection=s.selection % #s.entries + 1; return end
+    if next_item then s.selection=s.selection % #s.entries + 1; return end
+    if previous then s.selection=(s.selection-2) % #s.entries + 1; return end
     local entry = s.entries[s.selection]
     if s.page == 'confirm' then
         local action = entry.id == 'yes' and s.pending or nil

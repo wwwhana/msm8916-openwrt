@@ -28,21 +28,40 @@ local action=event('long')
 assert(action.id == 'profile' and action.profile == 'travel')
 assert(state.page == 'menu' and state.pending == nil)
 for _,id in ipairs({'reboot','recovery','bootloader','edl','poweroff'}) do
-    state=model.new(); event('long')
+    state=model.new(); event('connected'); event('long')
     while state.entries[state.selection].id ~= id do event('short') end
     assert(event('long') == nil and state.page == 'confirm'); frame()
     event('short'); assert(event('long').id == id)
 end
-state=model.new(); event('long')
+state=model.new(); event('connected'); event('long')
 for _=1,8 do event('short') end
 assert(state.selection == 1)
 model.result(state, false, string.rep('\27\n\255',30)); frame()
 event('disconnected'); assert(not state.connected)
+event('short'); assert(state.page == 'status')
+event('connected')
 event('short'); assert(state.page == 'menu')
 event('short'); event('long'); event('long'); event('short')
 assert(state.page == 'confirm' and state.selection == 2)
 event('disconnected'); assert(state.page == 'status' and state.pending == nil)
 event('connected'); assert(event('long') == nil and state.page == 'menu')
+
+-- Two side keys move in both directions; power selects, including Cancel.
+state=model.new(); event('connected'); event('mode-side')
+event('short'); assert(state.page == 'menu')
+event('up'); assert(state.selection == #state.entries)
+event('down'); assert(state.selection == 1)
+event('down'); assert(state.entries[state.selection].id == 'apn')
+event('short'); assert(state.page == 'profiles')
+event('down'); event('short'); assert(state.pending.profile == 'travel')
+assert(event('short') == nil and state.page == 'menu')
+event('down'); event('short'); event('short'); event('down')
+assert(state.page == 'confirm' and state.selection == 2)
+event('mode-power'); assert(state.page == 'status' and state.pending == nil)
+event('short'); assert(state.page == 'menu')
+assert(view.frame(state):find('Short: next', 1, true))
+event('mode-side'); event('short')
+assert(view.frame(state):find('Side: up/down', 1, true))
 
 -- Run the actual action backend with an in-memory UCI fixture. No commands run.
 local values={settings={['.type']='settings', allow_roaming='0'},

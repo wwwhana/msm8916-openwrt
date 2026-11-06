@@ -1,0 +1,5 @@
+#!/bin/sh
+case "$1" in
+	list) echo '{"status":{}}' ;;
+	call) [ "$2" != status ] || exec /usr/libexec/a8-device status ;;
+esac
