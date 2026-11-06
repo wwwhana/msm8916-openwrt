@@ -189,8 +189,6 @@ fi
 
 echo "[+] Compiling lk2nd..."
 
-if [ ! -f "$BUILDDIR/lk2nd/build-lk1st-msm8916/emmc_appsboot.mbn" ]; then
-
 (
     cd "$BUILDDIR/lk2nd"
 
@@ -218,6 +216,22 @@ if [ ! -f "$BUILDDIR/lk2nd/build-lk1st-msm8916/emmc_appsboot.mbn" ]; then
     # Derive the family from the firmware.zip path ($1); an explicit
     # RECOVERY_KEY_GPIO env var still overrides the auto-detection.
     FW_NAME="$(basename "${OUT_FILE%.zip}")"
+    # Only the LCD-equipped V18 gets this driver. Other boards retain their UI.
+    A8_MENU=0
+    case "$FW_NAME" in *mifib-v18*) A8_MENU=1 ;; esac
+    if [ "$A8_MENU" = 1 ]; then
+        PROJECT_ROOT="$(dirname "$TOPDIR")"
+        cp -a "$PROJECT_ROOT/msm89xx/image/lk2nd-a8" lk2nd/a8
+        cp "$PROJECT_ROOT/packages/a8-display/src/one-button.h" lk2nd/a8/
+        python3 - "$PROJECT_ROOT/packages/a8-display/files/stock-init.hex" <<'PY'
+from pathlib import Path
+import sys
+data = bytes.fromhex(Path(sys.argv[1]).read_text())
+Path('lk2nd/a8/stock-init.h').write_text(
+    '/* Generated from stock-init.hex */\nstatic const unsigned char stock_init[] = {' +
+    ','.join('0x%02x' % b for b in data) + '};\n')
+PY
+    fi
     _auto_gpio=""; _auto_low=""
     case "$FW_NAME" in
         *mifib-v12*|*mifib-v18*|*mf800b*) _auto_gpio=102; _auto_low=1 ;;
@@ -253,6 +267,8 @@ if [ ! -f "$BUILDDIR/lk2nd/build-lk1st-msm8916/emmc_appsboot.mbn" ]; then
         -e '/^DEFINES += RECOVERY_KEY_GPIO=/d' \
         -e '/^DEFINES += RECOVERY_KEY_ACTIVE_LOW=/d' \
         -e '/^DEFINES += BOOT_FAILOVER_COUNT=/d' \
+        -e '/^DEFINES += A8_ONE_BUTTON_MENU=/d' \
+        -e '/^MODULES += lk2nd\/a8$/d' \
         project/lk1st-msm8916.mk
     {
         # The recovery key is OPT-IN.  It is board-specific, and a pin that
@@ -265,6 +281,10 @@ if [ ! -f "$BUILDDIR/lk2nd/build-lk1st-msm8916/emmc_appsboot.mbn" ]; then
             echo "DEFINES += RECOVERY_KEY_ACTIVE_LOW=${RECOVERY_KEY_ACTIVE_LOW:-1}"
         fi
         echo 'DEFINES += BOOT_FAILOVER_COUNT=3'
+        if [ "$A8_MENU" = 1 ]; then
+            echo 'DEFINES += A8_ONE_BUTTON_MENU=1'
+            echo 'MODULES += lk2nd/a8'
+        fi
         cat project/lk1st-msm8916.mk
     } > project/lk1st-msm8916.mk.new
     mv project/lk1st-msm8916.mk.new project/lk1st-msm8916.mk
@@ -284,12 +304,6 @@ if [ ! -f "$BUILDDIR/lk2nd/build-lk1st-msm8916/emmc_appsboot.mbn" ]; then
         lk1st-msm8916
 
 )
-
-else
-
-    echo "[+] lk2nd already compiled"
-
-fi
 
 ###############################################################################
 # Output directory

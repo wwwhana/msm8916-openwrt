@@ -5,6 +5,8 @@ import importlib.util
 import os
 from pathlib import Path
 import subprocess
+import shutil
+import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -15,6 +17,21 @@ spec.loader.exec_module(panel)
 
 
 class PanelTests(unittest.TestCase):
+    def test_shared_button_and_boot_menu_timing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            binary = str(Path(tmp) / 'button')
+            subprocess.run([os.environ.get('CC', 'cc'), '-std=c99', '-Wall', '-Wextra', '-Werror',
+                            '-I' + str(PACKAGE / 'src'),
+                            '-I' + str(ROOT / 'msm89xx/image/lk2nd-a8'),
+                            str(Path(__file__).with_name('button.c')), '-o', binary], check=True)
+            subprocess.run([binary], check=True)
+
+    def test_menu_and_apn_actions(self):
+        lua = next((shutil.which(x) for x in ('lua5.1', 'lua', 'lua5.4', 'luajit') if shutil.which(x)), None)
+        self.assertIsNotNone(lua, 'Lua is required to check the display menu')
+        subprocess.run([lua, str(Path(__file__).with_name('menu.lua')),
+                        str(PACKAGE / 'files'), str(ROOT / 'packages/a8-apn/files/model.lua')], check=True)
+
     def test_display_package_can_be_selected(self):
         # OpenWrt propagates the DRM packages' @DISPLAY_SUPPORT dependency
         # to a8-display, removing it entirely when this option is missing.

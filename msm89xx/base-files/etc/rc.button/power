@@ -20,6 +20,11 @@
 # script.  To shut down, hold ~LONG_HOLD seconds and release; holding past
 # ~10-15 s lets the PMIC hard-reset (reboot) take over.
 
+if [ -x /usr/libexec/a8-button ] &&
+   tr '\000' '\n' < /proc/device-tree/compatible | grep -qx 'mifib-v18,generic'; then
+    exit 0
+fi
+
 SHORT_MAX=2
 LONG_HOLD=4
 DBL_WINDOW=800

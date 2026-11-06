@@ -4,6 +4,11 @@ START=94
 STOP=02
 
 start_service() {
+    # The A8 menu owns KEY_POWER; its presses must not also reboot/shut down.
+    if [ -x /usr/libexec/a8-button ] &&
+       tr '\000' '\n' < /proc/device-tree/compatible | grep -qx 'mifib-v18,generic'; then
+        return 0
+    fi
     procd_open_instance
     procd_set_param command /sbin/pwrkey-monitor
     procd_set_param respawn

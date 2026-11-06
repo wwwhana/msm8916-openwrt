@@ -84,10 +84,21 @@ main() {
 	tr '\000' '\n' < /proc/device-tree/compatible | grep -qx 'mifib-v18,generic' || exit 0
 	# Modules may finish probing after procd starts this service.
 	while [ ! -e /sys/class/graphics/fb0/name ] || [ ! -c /dev/tty1 ]; do sleep 2; done
-	exec 3>/dev/tty1 || exit 1
-	# Disable cursor, line wrap and the console blank timer; white on black.
-	printf '\033[?25l\033[?7l\033[9;0]\033[37;40m\033[2J' >&3
-	while :; do show_status >&3; sleep 5; done
+	umask 077
+	# Keep modem queries away from the input/menu process.
+	(
+		trap 'rm -f /var/run/a8-display.status.new; exit' TERM INT
+		while :; do
+			show_status > /var/run/a8-display.status.new
+			mv /var/run/a8-display.status.new /var/run/a8-display.status
+			sleep 5
+		done
+	) &
+	status_pid=$!
+	trap 'kill "$status_pid" "$menu_pid" 2>/dev/null; wait; exit' TERM INT EXIT
+	/usr/libexec/a8-menu &
+	menu_pid=$!
+	wait "$menu_pid"
 }
 
 if [ "$1" != --source-only ]; then main; fi

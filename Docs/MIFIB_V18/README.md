@@ -237,6 +237,55 @@ writes `drive-strength` straight to the sink-control register: the DTS value
 and packages `gpio_backlight.ko`. PWM routing and automatic dimming are not
 implemented in this version.
 
+### One-button navigation
+
+The accessible power button is used in both menus: **short press = next**,
+**hold for one second = select**. Releasing after a long press never counts
+as another short press. A key already held during startup is ignored until
+released. Both sides share the tested 30 ms debounce/1,000 ms hold logic in
+[`one-button.h`](../../packages/a8-display/src/one-button.h).
+
+The V18-only lk1st module in
+[`lk2nd-a8`](../../msm89xx/image/lk2nd-a8) initializes the stock GC9107 and
+shows OpenWrt, Recovery, Fastboot USB and EDL. Without input it starts
+OpenWrt after five seconds; the first button interaction cancels automatic
+boot. Explicit recovery/fastboot reboot requests, reset-key recovery and
+automatic boot-failure recovery retain priority. The selecting key must be
+released before handing control to the selected mode.
+
+The boot display uses conservative, write-only GPIO SPI mode 0 on
+MOSI16/CS18/CLK19, the same 140-byte panel sequence as Linux, the stock
+reset timing and MPP4 current sink. It checks that shared L6 is already
+at 1.8 V rather than changing its voltage; L17 is set to the stock 2.85 V.
+PMIC writes are read back. If the required shared-rail setting or PMIC
+access is unavailable, it logs the failure and continues normal boot.
+This is an experimental driver: cold-boot output, orientation and actual
+button wiring still need checking on this unit.
+
+After OpenWrt starts, a press opens the LCD menu. It offers status, automatic
+APN selection or an existing valid saved APN profile, reboot, Recovery,
+Fastboot, EDL and power-off. Profile changes and power actions first show
+**Cancel**, followed by **Confirm**. Create/edit profiles through LuCI's
+Network → APN profiles page. Choosing a profile saves only `a8_apn`
+settings; the existing carrier worker applies it with its normal no-SIM
+handling. No extra APN worker is started.
+
+Linux reads the PMIC's `KEY_POWER` through evdev, resynchronizes after
+`SYN_DROPPED`, ignores autorepeat and retries if the input device disappears.
+It uses an exclusive input grab. On V18 with this package installed, the
+legacy power monitor and power-button handler are disabled so menu clicks
+cannot also trigger their double-click reboot/long-press shutdown. Other
+boards keep their existing button handling. The hardware's much longer
+power-key reset is unchanged. Modem status queries run separately so they
+cannot block button timing. Lua separates menu state, display layout and
+status/APN/power operations in `a8_display` modules.
+
+The new boot menu is part of **`aboot.mbn`** in the firmware ZIP. Updating
+only boot/rootfs adds the OpenWrt menu but cannot add the boot menu to an
+older installed bootloader. A later bootloader update must target aboot
+specifically and keep the existing GPT and radio partitions. Current work
+is build-only; no bootloader or device installation has been performed.
+
 The `a8-display` service shows battery capacity when available, otherwise
 battery voltage, charging state, Wi-Fi up/down, ModemManager state, LAN IPv4
 address and uptime. Missing readings display `--`; an unavailable capacity
@@ -273,8 +322,9 @@ dmesg | grep -E 'mipi.dbi|drm|backlight|mpp|spi'
 
 Check visible text, orientation, cold boots and power consumption on the
 actual unit. A successful compile does not establish that the LCD works.
-For an A8 already running this OpenWrt layout, this is a boot/rootfs update;
-do not repeat GPT migration or radio/bootloader writes to add the display.
+For an A8 already running this OpenWrt layout, the Linux display/menu uses a
+boot/rootfs update. The boot menu additionally needs the new aboot described
+above; neither feature needs GPT migration or radio writes.
 Run `python3 tests/a8-display/test_display.py` for the hardware-free checks.
 
 ## USB ADB
@@ -552,7 +602,8 @@ device and perform no real EDL operations. They are also included in CI.
 | Display kernel configuration | Linux 6.12.112 `listnewconfig` detects the missing Acer EC setting before the fix; no new prompts after the fix, and `syncconfig` succeeds with stdin closed. Required framebuffer/panel/backlight options and both unrelated-driver exclusions verified. |
 | USB ADB source checks | Twelve tests passed: nine startup/reconnect/fallback/default-setting checks plus three package-preparation checks. Linux board harness with mutation checks also passed. |
 | Travel APN source checks | Five tests passed on macOS, including the actual Lua model; database generation, home-operator selection, manual profiles and existing-daemon integration checked. Built-package UCI/ModemManager execution remains pending. |
-| Updated LCD/ADB/APN firmware | Not built yet. Runs [42128495414](https://github.com/wwwhana/msm8916-openwrt/actions/runs/42128495414) and [42131944306](https://github.com/wwwhana/msm8916-openwrt/actions/runs/42131944306) exposed missing DRM/Acer settings, fixed through `2643d2d`. New dispatches return HTTP 422, “Actions has been disabled for this repository”, although repository Actions permissions and both workflow states report enabled/active. No new artifact or device installation was produced. |
+| Updated LCD/ADB/APN firmware | The user re-enabled Actions and build [42150978407](https://github.com/wwwhana/msm8916-openwrt/actions/runs/42150978407) was accepted for `a855b4d`; tests [42151049257](https://github.com/wwwhana/msm8916-openwrt/actions/runs/42151049257) passed. This run predates the one-button menus. A menu-enabled build and artifact inspection follow the source change. No device installation has been performed. |
+| One-button menus | Twelve display tests pass, including shared short/long/debounce/startup-held timing, boot-mode selection/timeout, Lua navigation/confirmation and APN settings actions. The Linux input reader compiles for host Linux and ARM64 with warnings treated as errors. Bootloader/full image build and physical LCD/button operation remain pending. |
 | Standalone USB adbd build | AOSP daemon and bundled libraries compiled and linked on ARM64 Alpine/musl; missing FunctionFS exits with an error. Ubuntu 22.04 host Go 1.18 generates the same BoringSSL error table. This is not an OpenWrt firmware build or device connection test. |
 | USB ADB on this A8 | Not run; shell, file transfer and unplug/replug require the new image and an accessible USB connection |
 | Removable SD, WPS and SIM hot-swap | Unverified; SD/WPS support not enabled |

@@ -1,0 +1,27 @@
+#!/usr/bin/lua
+-- SPDX-License-Identifier: GPL-2.0-only
+local model=require('a8_display.model')
+local view=require('a8_display.view')
+local service=require('a8_display.service')
+local state=model.new()
+local tty=assert(io.open('/dev/tty1', 'w'))
+tty:setvbuf('no')
+tty:write('\27[?25l\27[?7l\27[9;0]\27[37;40m\27[2J')
+local input=assert(io.popen('/usr/libexec/a8-button', 'r'))
+local previous
+local function draw()
+    local frame=view.frame(state, service.status())
+    if frame ~= previous then tty:write(frame); previous=frame end
+end
+draw()
+for event in input:lines() do
+    local action=model.event(state, event, event == 'long' and service.profiles() or nil)
+    if action then
+        model.result(state, true, 'Please wait')
+        draw()
+        local ok, message=service.run(action)
+        model.result(state, ok, message)
+    end
+    draw()
+end
+input:close(); tty:close(); os.exit(1)
