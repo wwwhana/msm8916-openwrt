@@ -251,10 +251,15 @@ The V18 diffconfig explicitly enables `CONFIG_DISPLAY_SUPPORT=y`: OpenWrt
 propagates this prerequisite from DRM to `a8-display`; omitting it silently
 removes the display package during configuration. The panel package brings
 in framebuffer console support and the 8x16 font through `kmod-fb`.
-The target kernel config explicitly disables `CONFIG_DRM_MSM`, which the
-OpenWrt generic config omits. Enabling DRM without this setting prompts for
-the unrelated Qualcomm display/GPU driver and stops unattended builds at
-`syncconfig`. This SPI panel uses `panel-mipi-dbi` instead.
+The target kernel config explicitly disables `CONFIG_DRM_MSM` and
+`CONFIG_EC_ACER_ASPIRE1`, which the OpenWrt generic config omits. Enabling
+DRM/backlight without these settings prompts for the unrelated Qualcomm
+display/GPU pipeline and Acer laptop controller, stopping unattended builds
+at `syncconfig`. This SPI panel uses `panel-mipi-dbi` instead. A separate
+Linux 6.12.112 Kconfig check combines the installed baseline, OpenWrt's
+generic/target config and the display packages' recursive KCONFIG settings;
+it detects the missing Acer option before the fix and no new prompts after
+the fix. This checks configuration, not hardware operation.
 
 After installing a display-enabled build, check:
 
