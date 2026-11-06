@@ -17,5 +17,6 @@ static inline enum a8_boot_choice a8_boot_step(struct a8_boot_state *s,
     if (!s->interactive && (uint32_t)(now - s->started) >= 5000) return A8_BOOT;
     return A8_WAIT;
 }
+int a8_boot_splash(const char *mode);
 enum a8_boot_choice a8_boot_menu(void);
 #endif

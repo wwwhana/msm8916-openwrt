@@ -18,6 +18,37 @@ spec.loader.exec_module(panel)
 
 
 class PanelTests(unittest.TestCase):
+    def test_tux_boot_splash_pixels(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / 'splash.c'
+            binary = Path(tmp) / 'splash'
+            source.write_text('''#include <stdio.h>
+#include "tux.h"
+int main(void) {
+    unsigned x, y;
+    for (y=0; y<128; ++y) for (x=0; x<128; ++x) {
+        unsigned short pixel=a8_splash_pixel(x, y);
+        putchar(pixel >> 8); putchar(pixel & 255);
+    }
+    return 0;
+}
+''')
+            subprocess.run([os.environ.get('CC', 'cc'), '-std=c99', '-Wall', '-Wextra', '-Werror',
+                            '-I' + str(ROOT / 'msm89xx/image/lk2nd-a8'),
+                            str(source), '-o', str(binary)], check=True)
+            pixels = subprocess.check_output([str(binary)])
+        self.assertEqual(len(pixels), 128 * 128 * 2)
+        rows = [pixels[y*256:(y+1)*256] for y in range(128)]
+        for y, row in enumerate(rows):
+            if 8 <= y < 88:
+                self.assertEqual(row[:48] + row[208:], bytes(96))
+            else:
+                self.assertEqual(row, bytes(256))
+        icon = b''.join(row[48:208] for row in rows[8:88])
+        # Anchored to the original Linux v6.12 Tux after RGB565 conversion.
+        self.assertEqual(hashlib.sha256(icon).hexdigest(),
+                         '25d6861490104827f51bc8b3fa0236dc30adab9bd0b32f6a6d0239b25423e6e9')
+
     @unittest.skipUnless(sys.platform.startswith('linux'), 'Linux evdev headers required')
     def test_evdev_reader_protocol(self):
         with tempfile.TemporaryDirectory() as tmp:

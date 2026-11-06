@@ -11,6 +11,7 @@
 #include <lk2nd/device/keys.h>
 #include "boot-menu.h"
 #include "stock-init.h"
+#include "tux.h"
 /* Reuse LK's existing 6x12 ASCII font inside 8x16 cells. */
 #include "../../lib/font/font.h"
 
@@ -155,20 +156,38 @@ static void draw_menu(const struct a8_boot_state *state, uint32_t now)
     else snprintf(text, sizeof(text), "Auto boot: %us", elapsed >= 5 ? 0 : 5-elapsed);
     draw_row(5, text); draw_row(6, "Short: next"); draw_row(7, "Hold 1s: select");
 }
+int a8_boot_splash(const char *mode)
+{
+    unsigned x, y;
+    unsigned char columns[]={0,0,0,127}, rows[]={0,0,0,95};
+    if (!panel_init()) {
+        dprintf(CRITICAL, "A8 LCD unavailable; continue boot\n");
+        return 0;
+    }
+    command(0x2a, columns, 4); command(0x2b, rows, 4);
+    set_pin(CS, 0); set_pin(DC, 0); spi_byte(0x2c); set_pin(DC, 1);
+    for (y=0; y<96; ++y) {
+        for (x=0; x<128; ++x) {
+            unsigned short pixel=a8_splash_pixel(x, y);
+            spi_byte(pixel >> 8); spi_byte(pixel);
+        }
+    }
+    set_pin(CS, 1);
+    draw_row(6, mode); draw_row(7, "Starting...");
+    if (!write_pmic(0, MPP4_BASE+0x40, 0x61) || !write_pmic(0, MPP4_BASE+0x46, 0x80))
+        return 0;
+    thread_sleep(750);
+    return 1;
+}
 enum a8_boot_choice a8_boot_menu(void)
 {
     struct a8_boot_state state={.selected=0, .interactive=0};
     enum a8_boot_choice choice;
+    if (!a8_boot_splash("OpenWrt")) return A8_BOOT;
     a8_button_reset(&button, lk2nd_keys_pressed(KEY_POWER), current_time());
     queued=A8_NONE;
-    if (!panel_init()) {
-        dprintf(CRITICAL, "A8 LCD unavailable; continue normal boot\n");
-        return A8_BOOT;
-    }
     state.started=current_time();
     draw_menu(&state, state.started);
-    if (!write_pmic(0, MPP4_BASE+0x40, 0x61) || !write_pmic(0, MPP4_BASE+0x46, 0x80))
-        return A8_BOOT;
     for (;;) {
         sample_button();
         choice=a8_boot_step(&state, queued, button.armed && button.raw, current_time());

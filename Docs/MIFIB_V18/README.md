@@ -288,7 +288,17 @@ released. Both sides share the tested 30 ms debounce/1,000 ms hold logic in
 
 The V18-only lk1st module in
 [`lk2nd-a8`](../../msm89xx/image/lk2nd-a8) initializes the stock GC9107 and
-shows OpenWrt, Recovery, Fastboot USB and EDL. Without input it starts
+first draws **Tux** from Linux v6.12, with the requested mode and `Starting...`
+below it. The indexed RGB565 asset preserves the original 80×80 pixels and
+credits Larry Ewing and the GIMP in [`tux.h`](../../msm89xx/image/lk2nd-a8/tux.h).
+It is centered on the 128×128 panel, leaving two text rows. The light is
+enabled after drawing, and the splash stays for 750 ms. Direct Recovery and
+Fastboot entry also initialize and draw the splash; these paths previously
+skipped the LCD menu and initialization entirely. A panel/PMIC failure still
+lets the requested boot mode proceed. This is a bootloader change; it does
+not add LCD/ADB drivers to the existing recovery image.
+
+Normal boot then shows OpenWrt, Recovery, Fastboot USB and EDL. Without input it starts
 OpenWrt after five seconds; the first button interaction cancels automatic
 boot. Explicit recovery/fastboot reboot requests, reset-key recovery and
 automatic boot-failure recovery retain priority. The selecting key must be
@@ -302,6 +312,9 @@ PMIC writes are read back. If the required shared-rail setting or PMIC
 access is unavailable, it logs the failure and continues normal boot.
 This is an experimental driver: cold-boot output, orientation and actual
 button wiring still need checking on this unit.
+The hardware-free Tux test compiles the actual pixel helper and checks its
+RGB565 output, exact image hash and black margins. A preview was inspected;
+visible Tux output on the unit is pending installation and hardware checks.
 
 After OpenWrt starts, a press opens the LCD menu. It offers status, automatic
 APN selection or an existing valid saved APN profile, reboot, Recovery,
