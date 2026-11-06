@@ -47,7 +47,9 @@ The LCD also received kernel messages through `console=tty0`, overwriting the
 16-column status/menu. The V18 boot command line now keeps only the UART
 console; other boards retain their command lines. The live check temporarily
 lowered console verbosity and redrew the menu; the kernel log remains readable
-through ADB.
+through ADB. The observed default font made a 16×16 terminal, whereas the menu
+uses eight rows of sixteen characters. V18 also selects `fbcon=font:VGA8x16`
+explicitly so the compiled-in 8×16 font fills the intended 16×8 grid.
 
 USB NCM initially existed as `usb1` but was down and absent from `br-lan`.
 Both ECM and NCM were enabled in UCI. Gadget creation deliberately prefers NCM,

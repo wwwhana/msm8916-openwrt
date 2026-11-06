@@ -165,7 +165,7 @@ define Device/generic-mifib-v18
 	DEVICE_DTS := msm8916-generic-mifib-v18
 	SUPPORTED_DEVICES := mifib-v18,generic
 	# Keep kernel messages off the small LCD used by a8-display.
-	CMDLINE := "earlycon console=ttyMSM0,115200 root=/dev/mmcblk0p14 rootfstype=squashfs rootwait"
+	CMDLINE := "earlycon console=ttyMSM0,115200 fbcon=font:VGA8x16 root=/dev/mmcblk0p14 rootfstype=squashfs rootwait"
 	DEVICE_PACKAGES += a8-display adbd a8-apn
 endef
 TARGET_DEVICES += generic-mifib-v18
