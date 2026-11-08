@@ -1,0 +1,22 @@
+WMS List Messages uses 0x10 for Message Tag and 0x11 for Message Mode.
+The old IDs cause MissingArgument on this MSM8916 firmware, leaving the
+initial ModemManager SMS list empty even when the query itself failed.
+
+--- a/data/qmi-service-wms.json
++++ b/data/qmi-service-wms.json
+@@ -391,13 +391,13 @@
+                      "format"        : "guint8",
+                      "public-format" : "QmiWmsStorageType" },
+                    { "name"          : "Message Tag",
+-                     "id"            : "0x11",
++                     "id"            : "0x10",
+                      "type"          : "TLV",
+                      "since"         : "1.0",
+                      "format"        : "guint8",
+                      "public-format" : "QmiWmsMessageTagType" },
+                    { "name"          : "Message Mode",
+-                     "id"            : "0x12",
++                     "id"            : "0x11",
+                      "type"          : "TLV",
+                      "since"         : "1.0",
+                      "format"        : "guint8",

@@ -14,17 +14,22 @@ local function query(args)
     -- Arguments come from validated device/object identifiers, never shell text.
     local p = io.popen('/usr/bin/mmcli --timeout=3 ' .. args .. ' --output-json 2>/dev/null', 'r')
     if not p then return {} end
-    local s = p:read('*a'); p:close(); return json.parse(s) or {}
+    local s = p:read('*a'); p:close()
+    local ok, value = pcall(json.parse, s)
+    return ok and type(value) == 'table' and value or {}
 end
 local function get_sim(device)
     if not device:match('^[%w_./%-]+$') then return {present=false} end
     local modem = query('--modem=' .. device).modem or {}
+    if not next(modem) then return {present=false, error='modem-unavailable'} end
     local g = modem.generic or {}
     local path = g.sim or ''
     local result = {present=false, modem_state=g.state,
         radio_modes=model.supported_radio_modes(g['supported-modes']),
         current_radio_mode=model.current_radio_mode(g['current-modes'])}
     if not path:match('^/org/freedesktop/ModemManager1/SIM/%d+$') then
+        -- An absent object during probing is not evidence of a missing card.
+        if g['state-failed-reason'] ~= 'sim-missing' then result.error='waiting-sim' end
         return result
     end
     local sim = (query('--sim=' .. path).sim or {}).properties or {}

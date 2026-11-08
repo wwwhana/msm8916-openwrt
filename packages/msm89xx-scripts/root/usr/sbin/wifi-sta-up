@@ -5,6 +5,7 @@
 #                              wpa_supplicant in the FOREGROUND (procd respawns)
 #        wifi-sta-up dhcp  -- wait for the STA to associate, run udhcpc in the
 #                              FOREGROUND (procd respawns)
+#        wifi-sta-up scan  -- scan through the station owner, or read BSS cache
 #
 # Why not a wifi-iface: netifd's wifi script restarts the phy whenever the
 # wireless config changes -- and a phy restart with a managed iface present
@@ -24,8 +25,8 @@ MODE="${1:-sta}"
 
 config_load wifista || exit 0
 config_get_bool enabled main enabled 0
-# "status" is also useful while disabled (the page shows the state either way).
-if [ "$MODE" != "status" ] && [ "$enabled" != 1 ]; then
+# Scanning the hotspot remains useful while station mode is disabled.
+if [ "$MODE" != "status" ] && [ "$MODE" != "scan" ] && [ "$enabled" != 1 ]; then
 	exit 0
 fi
 
@@ -264,6 +265,34 @@ find_sta() {
 		}
 	done
 	return 1
+}
+
+run_scan() {
+	local ap sta iface reply out cached=0
+	ap="$(find_ap)"
+	sta="$(find_sta)"
+	iface="${ap:-$sta}"
+	[ -n "$iface" ] || { echo 'Wi-Fi interface not found' >&2; return 1; }
+	if [ -n "$sta" ] && timeout 3 wpa_cli -i "$sta" ping 2>/dev/null | grep -q PONG; then
+		# Supplicant owns STA scans. An independent AP scan can collide with it.
+		reply="$(timeout 3 wpa_cli -i "$sta" scan 2>/dev/null)"
+		if printf '%s\n' "$reply" | grep -qx OK; then sleep 3; else cached=1; fi
+		out="$(iw dev "$iface" scan dump 2>/dev/null)"
+		# The driver cache may include older BSS entries even after a fresh scan.
+		cached=1
+	else
+		out="$(timeout 10 iw dev "$iface" scan 2>/dev/null)" || {
+			out="$(iw dev "$iface" scan dump 2>/dev/null)"
+			cached=1
+		}
+	fi
+	if ! printf '%s\n' "$out" | grep -q '^BSS '; then
+		[ "$cached" = 0 ] && return 0
+		echo 'Scan unavailable; no cached networks. Try again.' >&2
+		return 1
+	fi
+	[ "$cached" = 0 ] || echo 'scan_source=cache'
+	printf '%s\n' "$out"
 }
 
 ap_state() {
@@ -976,5 +1005,6 @@ sta)  bring_up_sta ;;
 dhcp) run_dhcp ;;
 watchdog) run_watchdog ;;
 status)   run_status ;;
-*)    echo "usage: $0 sta|dhcp|watchdog|status" >&2; exit 1 ;;
+scan) run_scan ;;
+*)    echo "usage: $0 sta|dhcp|watchdog|status|scan" >&2; exit 1 ;;
 esac

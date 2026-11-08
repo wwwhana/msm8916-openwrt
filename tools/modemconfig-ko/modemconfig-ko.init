@@ -1,0 +1,15 @@
+#!/bin/sh /etc/rc.common
+# SPDX-License-Identifier: GPL-2.0-or-later
+START=99
+STOP=5
+USE_PROCD=1
+
+start_service() {
+	procd_open_instance
+	procd_set_param command /bin/sh -c 'exec 9>/var/lock/modemconfig-ko.lock; flock -n 9 || exit 1; rm -f /var/run/modemconfig-ko-firewall.nft; exec /usr/sbin/modemconfig-ko run android-carrier'
+	procd_set_param respawn 3600 10 0
+	procd_set_param term_timeout 15
+	procd_set_param stdout 1
+	procd_set_param stderr 1
+	procd_close_instance
+}

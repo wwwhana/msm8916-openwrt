@@ -1,0 +1,73 @@
+#!/usr/bin/lua
+-- SPDX-License-Identifier: GPL-2.0-only
+local n=require('nixio')
+local pairing=require('a8_display.pairing')
+local rd,wr=assert(n.pipe())
+local input,output=assert(n.pipe())
+local pid=assert(n.fork())
+if pid == 0 then
+    rd:close(); output:close()
+    local stdin=n.dup(input,n.stdin)
+    local stdout=n.dup(wr,n.stdout)
+    local stderr=n.dup(wr,n.stderr)
+    assert(stdin and stdout and stderr)
+    input:close(); wr:close()
+    n.exec('/usr/bin/bt-agent','-c','DisplayYesNo')
+    os.exit(1)
+end
+input:close(); wr:close(); rd:setblocking(false)
+n.signal(13,'ign')
+local pidfile=assert(io.open('/var/run/bt-pairing-agent.pid','w')); pidfile:write(pid); pidfile:close()
+os.remove(pairing.request); os.remove(pairing.reply)
+local buffer,pending,count='',nil,0
+local last_peer_check=0
+local function clear()
+    pending=nil; buffer=''
+    os.remove(pairing.request); os.remove(pairing.reply)
+end
+while true do
+    local events={{fd=rd,events=n.poll_flags('in','hup','err')}}
+    n.poll(events,200)
+    local chunk=rd:read(4096)
+    if chunk == '' then break end
+    if chunk then
+        buffer=(buffer .. chunk):sub(-8192)
+        if buffer:find('Enter passkey:',1,true) then break end
+        local _,cancel=buffer:find('Request canceled\n',1,true)
+        if cancel then local rest=buffer:sub(cancel+1); clear(); buffer=rest end
+        if not pending then
+            local request=pairing.parse(buffer)
+            if request then
+                count=count+1
+                request.id=n.getpid() .. '-' .. count
+                request.started=os.time()
+                request.expires=request.started+45
+                pairing.write('/var/run/bt-pairing.last',{id=request.id,state='requested',time=request.started})
+                pending=request
+                if not pairing.write(pairing.request,request) then break end
+            end
+        end
+    end
+    if pending then
+        local reply=pairing.read(pairing.reply)
+        local disconnected=false
+        if os.time()-pending.started>=2 and os.time()-last_peer_check>=1 then
+            last_peer_check=os.time()
+            disconnected=pairing.connected(pending.address) == false
+        end
+        if disconnected then reply={id=pending.id,accept=false} end
+        if reply and reply.id ~= pending.id then os.remove(pairing.reply); reply=nil end
+        if reply or os.time()>=pending.expires then
+            local answer=reply and reply.accept == true and 'yes\n' or 'no\n'
+            local written=output:write(answer)
+            pairing.write('/var/run/bt-pairing.last',{id=pending.id,state=written == #answer and
+                (disconnected and 'peer-disconnected' or not reply and 'timed-out' or reply.accept == true and 'approval-sent' or 'rejected') or 'write-failed',
+                elapsed=os.time()-pending.started,time=os.time()})
+            if written ~= #answer then break end
+            clear()
+        end
+    end
+end
+clear(); os.remove('/var/run/bt-pairing-agent.pid'); output:close(); rd:close()
+n.kill(pid,15); n.waitpid(pid)
+os.exit(1)

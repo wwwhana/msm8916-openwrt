@@ -1,5 +1,6 @@
 #!/bin/sh
 # Copyright (C) 2016-2019 Aleksander Morgado <aleksander@aleksander.es>
+# netifd executes this file directly; preserve its executable mode on install.
 
 [ -x /usr/bin/mmcli ] || exit 0
 [ -x /usr/sbin/pppd ] || exit 0

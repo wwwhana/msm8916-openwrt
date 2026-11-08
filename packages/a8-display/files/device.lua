@@ -11,15 +11,34 @@ end
 function M.pid()
     return tonumber((read('/proc/self/stat') or ''):match('^(%d+)'))
 end
+function M.display_power(on)
+    local value=on and 1 or 0
+    local f=io.open('/sys/class/backlight/backlight/brightness','w')
+    if not f then return false end
+    local written=f:write(tostring(value))
+    local closed=f:close()
+    return written and closed and
+        tonumber(read('/sys/class/backlight/backlight/actual_brightness')) == value or false
+end
+local function draw_image(image,path,options)
+    local f=io.open(path..'.new','wb')
+    if not f then return false end
+    local written=f:write(image)
+    local closed=f:close()
+    if not written or not closed or not os.rename(path..'.new',path) then
+        os.remove(path..'.new'); return false
+    end
+    local rc=os.execute('fbsplash -d /dev/fb0 -s ' .. path .. (options or '') .. ' >/dev/null 2>&1')
+    return rc == 0 or rc == true
+end
+function M.draw_clock(image)
+    return draw_image(image,'/var/run/a8-clock.ppm')
+end
+function M.draw_dashboard(image)
+    return draw_image(image,'/var/run/a8-dashboard.ppm')
+end
 function M.settings()
-    local c=require('uci').cursor()
-    -- An absolute path skips UCI deltas: Save alone must not change controls.
-    local ok=c:load('/etc/config/a8_device')
-    local display=ok and c:get('a8_device', 'settings', 'display')
-    local buttons=ok and c:get('a8_device', 'settings', 'buttons')
-    c:close()
-    return {display=display == 'lcd' and 'lcd' or 'led',
-            buttons=buttons == 'side' and 'side' or 'power'}
+    return require('a8_display.settings').read()
 end
 function M.probe()
     local p=io.popen('/usr/libexec/a8-button --probe', 'r')

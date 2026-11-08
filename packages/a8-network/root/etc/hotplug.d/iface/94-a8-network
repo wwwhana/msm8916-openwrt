@@ -1,0 +1,5 @@
+#!/bin/sh
+case "$INTERFACE:$ACTION" in
+lan:ifup) /usr/sbin/a8-network refresh >/dev/null 2>&1 & ;;
+usbwan:ifup|usbwan:ifdown|usbwan:ifupdate) /etc/init.d/uplink-manager reload >/dev/null 2>&1 ;;
+esac

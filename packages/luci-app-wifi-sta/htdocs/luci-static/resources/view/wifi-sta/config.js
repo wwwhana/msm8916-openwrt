@@ -5,31 +5,55 @@
 'require uci';
 'require ui';
 
+function decodeSSID(value) {
+	var bytes = [];
+	for (var i = 0; i < value.length;) {
+		var escaped = value.slice(i).match(/^\\x([0-9a-fA-F]{2})/);
+		if (escaped) {
+			bytes.push(parseInt(escaped[1], 16));
+			i += 4;
+		} else {
+			var ch = String.fromCodePoint(value.codePointAt(i));
+			bytes.push.apply(bytes, new TextEncoder().encode(ch));
+			i += ch.length;
+		}
+	}
+	return new TextDecoder().decode(new Uint8Array(bytes));
+}
+
 function parseScan(out) {
 	var cells = [], cur = null;
-
 	(out || '').split('\n').forEach(function(line) {
 		var m;
-
-		if (/^Cell \d+/.test(line)) {
-			cur = { ssid: '', channel: '', signal: '', enc: '' };
+		if (/^BSS /.test(line) || /^\s*Cell \d+/.test(line)) {
+			cur = { ssid: '', channel: '', signal: '', enc: 'none' };
 			cells.push(cur);
 			return;
 		}
-
-		if (!cur)
-			return;
-
-		if ((m = line.match(/ESSID: "(.*)"/)))
+		if (!cur) return;
+		if ((m = line.match(/^\s*SSID: (.*)$/)))
+			cur.ssid = decodeSSID(m[1]);
+		else if ((m = line.match(/ESSID: "(.*)"/)))
 			cur.ssid = m[1];
 		else if ((m = line.match(/Channel: (\d+)/)))
 			cur.channel = m[1];
-		else if ((m = line.match(/Signal: (-?\d+) dBm/)))
+		else if ((m = line.match(/^\s*freq: (\d+)/))) {
+			var freq = Number(m[1]);
+			cur.channel = String(freq === 2484 ? 14 : freq < 2500 ? (freq - 2407) / 5 :
+				freq >= 5955 ? (freq - 5950) / 5 : (freq - 5000) / 5);
+		} else if ((m = line.match(/^\s*(?:signal:|Signal:) (-?[\d.]+) dBm/)))
 			cur.signal = m[1] + ' dBm';
 		else if ((m = line.match(/Encryption: (.*)/)))
 			cur.enc = m[1];
+		else if (/^\s*capability:.*Privacy/.test(line))
+			cur.enc = 'Encrypted';
+		else if (/^\s*RSN:/.test(line))
+			cur.enc = 'WPA2';
+		else if (/^\s*WPA:/.test(line) && cur.enc !== 'WPA2')
+			cur.enc = 'WPA';
+		else if (/Authentication suites:.*SAE/.test(line))
+			cur.enc = /PSK/.test(line) ? 'WPA2/WPA3' : 'WPA3';
 	});
-
 	return cells.filter(function(c) { return c.ssid; });
 }
 
@@ -91,7 +115,7 @@ return view.extend({
 		s.anonymous = true;
 
 		o = s.option(form.Flag, 'enabled', _('Enable station mode'),
-			_('Off by default. The interface is created a few seconds after the access point is up.'));
+			_('Turn Wi-Fi relay on or off. Your hotspot and LTE connection stay enabled. Save & Apply keeps this choice after reboot.'));
 		o.rmempty = false;
 
 		o = s.option(form.Value, 'hostname', _('Hostname to announce'),
@@ -115,12 +139,12 @@ return view.extend({
 	o.rmempty = false;
 
 	o = s.option(form.Flag, 'uplink', _('Use this link as an internet uplink'),
-		_('When the modem has no data connection, send traffic and DNS through the upstream access point. The modem keeps priority while it has a default route, so this only takes over when the mobile link is down.'));
+		_('Internet sharing follows the Uplink policy. Select Wi-Fi preferred there to use a saved Wi-Fi network before LTE.'));
 	o.default = '1';
 	o.rmempty = false;
 
 	o = s.option(form.Value, 'route_metric', _('Uplink route metric'),
-		_('Higher than the modem\u2019s, so the mobile link stays the default route while it works.'));
+		_('The standby route metric. The Uplink policy selects which connection takes priority.'));
 	o.datatype = 'uinteger';
 	o.placeholder = '100';
 
@@ -198,22 +222,11 @@ return view.extend({
 				'click': ui.createHandlerFn(this, function() {
 					var out = document.getElementById('wifi-sta-scan');
 
-					// Scan the AP interface reported by wifi-sta-up status, and only
-					// when it exists -- a blind 'phy0-ap0' fallback would exec iwinfo
-					// against a possibly non-existent interface while the radio is
-					// still coming up.  The scan itself is read-only (a netlink
-					// hardware scan); it never touches the wireless config.
-					var iface = st.ap_iface;
+					out.textContent = _('Scanning…');
 
-					if (!iface) {
-						while (out.firstChild) out.removeChild(out.firstChild);
-						out.appendChild(E('em', {}, _('The access point interface was not found \u2014 is Wi-Fi up? Try again in a moment.')));
-						return;
-					}
-
-					out.textContent = _('Scanning\u2026');
-
-					return fs.exec('/usr/bin/iwinfo', [ iface, 'scan' ]).then(function(res) {
+					return fs.exec('/usr/sbin/wifi-sta-up', [ 'scan' ]).then(function(res) {
+						if (res.code !== 0)
+							throw new Error((res.stderr || '').trim() || _('Radio scan unavailable. Try again.'));
 						var cells = parseScan(res.stdout);
 
 						while (out.firstChild) out.removeChild(out.firstChild);
@@ -309,6 +322,9 @@ return view.extend({
 }, _('Use')))
 							]);
 						});
+
+						if (/^scan_source=cache$/m.test(res.stdout || ''))
+							out.appendChild(E('p', {}, _('Recent scan results')));
 
 						out.appendChild(E('table', { 'class': 'table' }, [
 							E('thead', { 'class': 'tr table-titles' }, [

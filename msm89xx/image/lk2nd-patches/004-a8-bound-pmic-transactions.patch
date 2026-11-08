@@ -1,0 +1,76 @@
+--- a/platform/msm_shared/spmi.c
++++ b/platform/msm_shared/spmi.c
+@@ -35,6 +35,11 @@
+ #include <platform/interrupts.h>
+ #include <malloc.h>
+ #include <platform.h>
++#if A8_ONE_BUTTON_MENU
++#include <platform/timer.h>
++#include <string.h>
++#include "../../lk2nd/a8/pmic-wait.h"
++#endif
+ 
+ #define PMIC_ARB_V2 0x20010000
+ #define CHNL_IDX(sid, pid) ((sid << 8) | pid)
+@@ -57,6 +62,9 @@
+ 	/* Allocate the channel table */
+ 	chnl_tbl = (uint8_t *) malloc(chnl_tbl_sz);
+ 	ASSERT(chnl_tbl);
++#if A8_ONE_BUTTON_MENU
++	memset(chnl_tbl, 0xff, chnl_tbl_sz);
++#endif
+ 
+ 	for(i = 0; i < max_peripherals; i++)
+ 	{
+@@ -142,6 +150,10 @@
+ 	if (pmic_arb_ver >= PMIC_ARB_V2)
+ 	{
+ 		pmic_arb_chnl_num = chnl_tbl[CHNL_IDX(cmd->slave_id, cmd->address)];
++#if A8_ONE_BUTTON_MENU && SPMI_CORE_V2
++		if (!a8_pmic_channel_matches(pmic_arb_chnl_num, max_peripherals,
++			cmd->slave_id, cmd->address)) return 1;
++#endif
+ 	}
+ 
+ 	/* Disable IRQ mode for the current channel*/
+@@ -187,7 +199,11 @@
+ 	writel(val, PMIC_ARB_CHNLn_CMD0(pmic_arb_chnl_num));
+ 
+ 	/* Wait till CMD DONE status */
++#if A8_ONE_BUTTON_MENU
++	if (!a8_pmic_wait_status(PMIC_ARB_CHNLn_STATUS(pmic_arb_chnl_num), &val)) return 1;
++#else
+ 	while (!(val = readl(PMIC_ARB_CHNLn_STATUS(pmic_arb_chnl_num))));
++#endif
+ 
+ 	/* Check for errors */
+ 	error = val ^ (1 << PMIC_ARB_CMD_DONE);
+@@ -254,6 +270,10 @@
+ 	if (pmic_arb_ver >= PMIC_ARB_V2)
+ 	{
+ 		pmic_arb_chnl_num = chnl_tbl[CHNL_IDX(cmd->slave_id, cmd->address)];
++#if A8_ONE_BUTTON_MENU && SPMI_CORE_V2
++		if (!a8_pmic_channel_matches(pmic_arb_chnl_num, max_peripherals,
++			cmd->slave_id, cmd->address)) return 1;
++#endif
+ 	}
+ 
+ 
+@@ -288,9 +308,17 @@
+ 
+ 	/* Wait till CMD DONE status */
+ #if SPMI_CORE_V2
++#if A8_ONE_BUTTON_MENU
++	if (!a8_pmic_wait_status(PMIC_ARB_OBS_CHNLn_STATUS(pmic_arb_chnl_num), &val)) return 1;
++#else
+ 		while (!(val = readl(PMIC_ARB_OBS_CHNLn_STATUS(pmic_arb_chnl_num))));
++#endif
++#else
++#if A8_ONE_BUTTON_MENU
++	if (!a8_pmic_wait_status(PMIC_ARB_CHNLn_STATUS(pmic_arb_chnl_num), &val)) return 1;
+ #else
+ 		while (!(val = readl(PMIC_ARB_CHNLn_STATUS(pmic_arb_chnl_num))));
++#endif
+ #endif
+ 
+ 	/* Check for errors */

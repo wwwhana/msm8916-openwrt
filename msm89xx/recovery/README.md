@@ -39,10 +39,25 @@ Both consequences are handled, and both are easy to reintroduce by accident:
   the initramfs and `/init` insmods them in dependency order. Without them the
   image boots perfectly, has no `wlan0`, and no AP.
 
+## V18 LCD
+
+The LCD-equipped `mifib-v18` also carries the production DRM/MIPI-DBI modules,
+its GC9107 initialization firmware, and a Tux image generated from the
+bootloader's indexed pixels. `/usr/sbin/recovery-display` runs independently
+of the rescue services and draws Tux, `Recovery`, and `192.168.10.1` on the
+128×128 display. Its two text rows use `fbcon=font:VGA8x16`; the recovery
+command line leaves kernel messages on the UART. Other variants skip the
+display helper and do not require LCD modules. The V18 image was installed
+and its visible output confirmed by the owner on 2026-11-07.
+
+Build inputs are copied into a temporary packing tree. Board firmware and
+calibration are added there, without replacing tracked `irfs/` files.
+Unit-specific firmware and the resulting private image must stay out of Git.
+
 ## Step by step: build, flash and run it
 
 The whole procedure, in the order it has to happen. `<board>` is `hmuf02v5`,
-`mf800b`, `mifib-v12`, `ufi003_mb_v02` or `ufi001b`.
+`mf800b`, `mifib-v12`, `mifib-v18`, `ufi003_mb_v02` or `ufi001b`.
 
 ### 0. Prerequisites
 

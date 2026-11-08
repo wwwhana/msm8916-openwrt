@@ -4,7 +4,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=uci-usb-gadget
 PKG_VERSION:=1.0.0
-PKG_RELEASE:=4
+PKG_RELEASE:=6
 
 PKG_LICENSE:=GPL-2.0-only
 PKG_MAINTAINER:=Miguel Fuertes <hkfuertes@gmail.com>
@@ -56,6 +56,8 @@ define Package/$(PKG_NAME)/install
 	$(LN) ../init.d/usb-gadget $(1)/etc/rc.d/S99usb-gadget
 	$(INSTALL_DIR) $(1)/etc/config
 	$(INSTALL_CONF) ./files/usbgadget.config $(1)/etc/config/usbgadget
+	$(INSTALL_DIR) $(1)/lib/upgrade/keep.d
+	echo /etc/usb-gadget.serial > $(1)/lib/upgrade/keep.d/usb-gadget
 endef
 
 define Package/$(PKG_NAME)/postinst

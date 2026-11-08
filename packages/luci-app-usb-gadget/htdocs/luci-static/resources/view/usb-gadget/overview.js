@@ -25,7 +25,7 @@ return view.extend({
         
         // Obtener funciones habilitadas
         var functions = [];
-        ['rndis', 'ecm', 'ncm', 'acm', 'ums'].forEach(function(func) {
+        ['rndis', 'ecm', 'ncm', 'acm', 'adb', 'ums'].forEach(function(func) {
             if (uci.get('usbgadget', func, 'enabled') == '1') {
                 var desc = uci.get('usbgadget', func, 'description') || func.toUpperCase();
                 functions.push(desc);

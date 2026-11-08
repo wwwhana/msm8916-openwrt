@@ -1,0 +1,56 @@
+MSM8916 exposes MM through a QMUX WWAN port while its IMS data client
+uses QRTR node 0. Accept that port without admitting external USB modems.
+Handle modem removal before discovery and include C boolean definitions.
+
+--- a/qvd-modem.c
++++ b/qvd-modem.c
+@@ -10,6 +10,8 @@
+ #include <stdio.h>
+ 
+ #include "qvd-connection.h"
++#include <stdbool.h>
++
+ #include "qvd-modem.h"
+ 
+ enum {
+@@ -206,7 +208,8 @@
+ 
+ 	for (i = 0; i < n_ports; i++) {
+ 		if (ports[i].type == MM_MODEM_PORT_TYPE_QMI
+-		 && !strcmp(ports[i].name, "qrtr0")) {
++		 && (!strcmp(ports[i].name, "qrtr0")
++		     || !strcmp(ports[i].name, "wwan0qmi0"))) {
+ 			is_qrtr = TRUE;
+ 			break;
+ 		}
+@@ -249,6 +252,9 @@
+ 	const gchar *removed_path, *path;
+ 
+ 	removed_path = mm_object_get_path(MM_OBJECT(object));
++	if (ctx->modem == NULL)
++		return;
++
+ 	path = mm_modem_get_path(ctx->modem);
+ 
+ 	g_info("ModemManager removed object: path: %s\n", removed_path);
+@@ -278,7 +284,8 @@
+ 
+ 	for (i = 0; i < n_ports; i++) {
+ 		if (ports[i].type == MM_MODEM_PORT_TYPE_QMI
+-		 && !strcmp(ports[i].name, "qrtr0")) {
++		 && (!strcmp(ports[i].name, "qrtr0")
++		     || !strcmp(ports[i].name, "wwan0qmi0"))) {
+ 			is_qrtr = TRUE;
+ 			break;
+ 		}
+--- a/qvd-message.c
++++ b/qvd-message.c
+@@ -9,6 +9,8 @@
+ #include <libqrtr.h>
+ #include <stdio.h>
+ #include <string.h>
++
++#include <stdbool.h>
+ 
+ #include "qvd-message.h"
+ 

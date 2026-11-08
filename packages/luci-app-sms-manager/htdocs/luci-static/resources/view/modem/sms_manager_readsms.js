@@ -6,6 +6,7 @@
 'require uci';
 'require view';
 'require rpc';
+'require sms_manager as sms';
 
 /*
 	Copyright 2026 Rafał Wabik - IceG - From eko.one.pl forum
@@ -55,7 +56,8 @@ return view.extend({
 		}
 		
 		#smsTable .message {
-			text-align: justify !important;
+			text-align: left !important;
+			white-space: pre-wrap;
 			word-break: break-word;
 		}
 		
@@ -154,9 +156,7 @@ return view.extend({
 					return uci.load('sms_manager').then(function() {
 						try {
 							uci.set('sms_manager', '@sms_manager[0]', 'sms_count', String(remainingSms));
-							fs.exec('sleep 2');
 							uci.save();
-							fs.exec('sleep 2');
 							uci.apply();
 						} catch (e) {}
 						
@@ -392,7 +392,7 @@ return view.extend({
 						}
 						
 						let smsPromises = smsIds.map(function(smsId) {
-							return L.resolveDefault(fs.exec_direct('/usr/bin/mmcli', ['-s', smsId]), null);
+							return fs.exec_direct('/usr/bin/mmcli', ['-s', smsId, '-J'], 'json');
 						});
 						
 						Promise.all(smsPromises).then(function(smsResults) {
@@ -402,78 +402,12 @@ return view.extend({
 							let memoryCount = 0;
 							
 							smsResults.forEach(function(smsRes, index) {
-								
-								if (smsRes) {
-									let output = smsRes;
-									
-									let smsId = smsIds[index];
-									let number = '';
-									let text = '';
-									let timestamp = '';
-									let part = 1;
-									let total = 1;
-									let storage = "";
-									
-									let storageMatch = output.match(/storage:\s*'?([^'\n]+)'?/);
-									if (storageMatch) {
-										storage = storageMatch[1].trim();
-										if (storage === 'sm' || storage === 'SM') {
-											simCount++;
-										} else if (storage === 'me' || storage === 'ME') {
-											memoryCount++;
-										}
-									}
-
-									let numberMatch = output.match(/number:\s*(.+?)$/m);
-									if (numberMatch) {
-										number = numberMatch[1].trim();
-									}
-									
-									let textMatch = output.match(/text:\s*([\s\S]+?)(?=\n\s*-{2,}|\n\s*Properties)/);
-									if (textMatch) {
-										text = textMatch[1]
-											.split('\n')
-											.map(function(line) {
-												return line.replace(/^\s*\|?\s*/, '').trim();
-											})
-											.filter(function(line) { return line.length > 0; })
-											.join(' ')
-											.trim();
-									}
-									
-									let timeMatch = output.match(/timestamp:\s*(?:'([^']+)'|(\S+))/);
-									if (timeMatch) {
-										timestamp = (timeMatch[1] || timeMatch[2] || '').trim();
-									}
-									
-									let partMatch = output.match(/part:\s*'?(\d+)'?/);
-									if (partMatch) {
-										part = parseInt(partMatch[1]);
-									}
-									
-									let totalMatch = output.match(/total:\s*'?(\d+)'?/);
-									if (totalMatch) {
-										total = parseInt(totalMatch[1]);
-									}
-									
-									if (number && text) {
-										let fixedTimestamp = timestamp.replace(/([+-]\d{2})$/, '$1:00');
-										
-										smsList.push({
-											index: smsId,
-											sender: number,
-											content: text,
-											timestamp: timestamp,
-											part: part,
-											total: total,
-											date: new Date(fixedTimestamp || 0)
-										});
-									} else {
-									}
-								} else {
-								}
+								const item = sms.parse(smsRes, smsIds[index]);
+								if (item.storage === 'sm') simCount++;
+								else if (item.storage === 'me') memoryCount++;
+								smsList.push(item);
 							});
-							
+
 							let sortedSmsList = smsList.sort(function(a, b) {
 								return b.date - a.date;
 							});
@@ -486,9 +420,7 @@ return view.extend({
 							return uci.load('sms_manager').then(function() {
 								try {
 									uci.set('sms_manager', '@sms_manager[0]', 'sms_count', String(sortedSmsList.length));
-									fs.exec('sleep 2');
 									uci.save();
-									fs.exec('sleep 2');
 									uci.apply();
 								} catch (e) {}
 							}).then(function() {
@@ -528,7 +460,7 @@ return view.extend({
 										]),
 										E('td', { 'class': 'td from' }, displayNumber),
 										E('td', { 'class': 'td received' }, displayTime),
-										E('td', { 'class': 'td message' }, sms.content.replace(/\s+/g, ' ').trim())
+										E('td', { 'class': 'td message' }, sms.content)
 									]);
 									
 									smsTable.appendChild(row);

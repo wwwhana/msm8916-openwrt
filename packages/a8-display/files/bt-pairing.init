@@ -1,0 +1,32 @@
+#!/bin/sh /etc/rc.common
+# SPDX-License-Identifier: GPL-2.0-only
+START=99
+STOP=9
+USE_PROCD=1
+stop_agent() {
+	local pid cmd
+	pid=$(cat /var/run/bt-pairing-agent.pid 2>/dev/null)
+	case "$pid" in ''|*[!0-9]*) return 0 ;; esac
+	cmd=$(tr '\000' ' ' < "/proc/$pid/cmdline" 2>/dev/null)
+	case "$cmd" in '/usr/bin/bt-agent '*) kill "$pid" 2>/dev/null ;; esac
+	rm -f /var/run/bt-pairing-agent.pid
+}
+start_service() {
+	stop_agent
+	lua -e 'local d=require("a8_display.device"); os.exit(d.supported() and d.settings().display == "lcd" and 0 or 1)' || return 0
+	# The LCD agent handles confirmation; the unattended agent must not accept it.
+	/etc/init.d/btagent stop >/dev/null 2>&1
+	procd_open_instance
+	procd_set_param command /usr/libexec/bt-pairing
+	procd_set_param respawn 3600 5 0
+	procd_set_param stdout 1
+	procd_set_param stderr 1
+	procd_close_instance
+}
+stop_service() {
+	stop_agent
+	rm -f /var/run/bt-pairing.json /var/run/bt-pairing.reply
+}
+service_triggers() {
+	procd_add_reload_trigger a8_device
+}

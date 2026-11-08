@@ -7,15 +7,18 @@ local device=require('a8_display.device')
 local json=require('luci.jsonc')
 if not device.supported() then os.exit(0) end
 local config=device.settings()
-local state=model.new()
+local state=model.new(config)
 os.remove('/var/run/powerbtn.dbl')
 local input=assert(io.popen('/usr/libexec/a8-button' ..
     (config.display == 'lcd' and config.buttons == 'side' and ' --side' or ''), 'r'))
-local tty, previous, route, last_report, lcd_available
+local tty, previous, previous_image, previous_graphic, previous_power, route, last_report, lcd_available
 local pid=device.pid()
 local function close_screen()
-    if tty then tty:close(); tty=nil end
-    route=nil; previous=nil
+    if tty then
+        if previous_power ~= true then device.display_power(true) end
+        tty:close(); tty=nil
+    end
+    route=nil; previous=nil; previous_image=nil; previous_graphic=nil; previous_power=nil
     model.event(state, 'resync')
 end
 local function open_screen()
@@ -28,7 +31,11 @@ local function open_screen()
 end
 local function report()
     local data=json.stringify({pid=pid, display=tty and 'lcd' or 'led', buttons=state.mode,
-                              connected=state.connected})
+                              connected=state.connected, screensaver=state.saver or false,
+                              sleeping=state.sleeping or false,backlight_on=previous_power,page=state.page,
+                              call_state=state.call and state.call.state or 'idle',
+                              screensaver_timeout=state.settings.screensaver_timeout,
+                              screen_off_timeout=state.settings.screen_off_timeout})
     if data == last_report then return end
     local f=io.open('/var/run/a8-device.json.new', 'w')
     if f then
@@ -38,14 +45,54 @@ local function report()
 end
 local function draw()
     if not tty then return end
-    local frame=view.frame(state, service.status())
+    local on=not state.sleeping
+    if on and previous_power ~= true then
+        previous=nil; previous_image=nil; previous_graphic=nil
+    end
+    if previous_power ~= on and device.display_power(on) then previous_power=on end
+    if not on then return end
+    local now,status=os.time(),service.status()
+    status.call=state.call
+    local saver=state.saver or false
+    local graphic=saver and 'clock' or (state.connected or state.call) and 'screen' or 'text'
+    if graphic ~= previous_graphic then
+        if not tty:write('\27[2J') then close_screen(); return end
+        previous=nil; previous_image=nil; previous_graphic=graphic
+    end
+    if graphic ~= 'text' then
+        local image=saver and view.clock(status,now) or view.screen(state,status,now)
+        if image == previous_image then return end
+        local drawn
+        if saver then drawn=device.draw_clock(image) else drawn=device.draw_dashboard(image) end
+        if drawn then previous_image=image; return end
+        -- Keep the text status usable when the framebuffer renderer fails.
+        local fallback=view.frame(state,status,now,true)
+        if not tty:write(fallback) then close_screen(); return end
+        previous=fallback; return
+    end
+    local frame=view.frame(state,status,now)
     if frame ~= previous then
-        if tty:write(frame) then previous=frame else close_screen() end
+        if not tty:write(frame) then close_screen(); return end
+        previous=frame; previous_image=nil
+    end
+end
+local function prepare_image()
+    if not tty or state.saver or state.page~='sms-text' then return end
+    local page=state.sms.pages[state.text_page]
+    if page.image and not page.loaded then
+        draw()
+        model.image(state,service.thumbnail(page.image))
     end
 end
 report()
 for event in input:lines() do
-    if event == 'lcd-ready' or event == 'lcd-missing' then
+    if event == 'tick' then model.call(state,service.call()) end
+    local consumed=model.activity(state,event)
+    if event == 'tick' and tty and not route and not state.call then model.pairing(state,service.pairing()) end
+    if event == 'tick' and tty then model.tick(state) end
+    if consumed then
+        route=nil
+    elseif event == 'lcd-ready' or event == 'lcd-missing' then
         os.remove('/var/run/powerbtn.dbl')
         close_screen()
         lcd_available=event == 'lcd-ready'
@@ -63,18 +110,28 @@ for event in input:lines() do
             model.event(state, event)
         elseif tty and (event == 'up' or event == 'down' or route == 'lcd') then
             local selecting=event == 'long' or (event == 'short' and state.mode == 'side')
-            local action=model.event(state, event, selecting and service.profiles() or nil)
+            local needs_connections=selecting or state.page == 'message'
+            local action=model.event(state, event, selecting and service.profiles() or nil,
+                needs_connections and service.connections() or nil)
             if action then
                 model.result(state, true, 'Please wait')
                 draw()
                 local ok, message=service.run(action)
-                model.result(state, ok, message)
+                if ok and action.id == 'sms-list' then model.inbox(state,message)
+                elseif ok and action.id == 'sms-open' then model.read_sms(state,message)
+                else
+                    if ok and action.id=='display-timeout' then model.configure(state,device.settings()) end
+                    model.result(state, ok, message, action)
+                end
             end
         end
     end
+    prepare_image()
     draw()
     report()
 end
-input:close(); if tty then tty:close() end
+input:close(); close_screen()
 os.remove('/var/run/a8-device.json'); os.remove('/var/run/a8-device.json.new')
+os.remove('/var/run/a8-clock.ppm'); os.remove('/var/run/a8-clock.ppm.new')
+os.remove('/var/run/a8-dashboard.ppm'); os.remove('/var/run/a8-dashboard.ppm.new')
 os.exit(1)

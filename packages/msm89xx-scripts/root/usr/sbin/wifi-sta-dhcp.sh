@@ -14,6 +14,10 @@ signal_mgr() {
 }
 
 write_dns() {
+	# The manager owns DNS while running, including USB Ethernet selection.
+	local pid
+	pid=$(cat /var/run/uplink-manager.pid 2>/dev/null)
+	if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then return 0; fi
 	# $1 = DHCP-provided DNS servers.  Prefer the configured STA DNS
 	# (uplink.general.sta_dns, default 8.8.8.8 8.8.4.4); fall back to $1 so the
 	# preference survives even before uplink-manager runs.

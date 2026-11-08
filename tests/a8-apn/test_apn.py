@@ -27,6 +27,42 @@ XML = '''<serviceproviders><country code="kr"><provider><name>LG U+</name><gsm>
 
 
 class APNTests(unittest.TestCase):
+    def test_live_web_cache_invalidation(self):
+        node = shutil.which('node')
+        if not node:
+            self.skipTest('Node unavailable')
+        subprocess.run([node, str(Path(__file__).with_name('cache.js')),
+                        str(ROOT / 'openwrt-overlay/feeds/luci/modules/luci-base/ucode/template/header.ut')], check=True)
+
+    def test_legacy_ims_protocol_and_cleanup(self):
+        lua = next((shutil.which(x) for x in ('lua5.1', 'lua', 'luajit') if shutil.which(x)), None)
+        if not lua:
+            self.skipTest('Lua interpreter unavailable')
+        subprocess.run([lua, str(Path(__file__).with_name('qmi.lua')),
+                        str(PACKAGE / 'files/qmi.lua')], check=True)
+
+    def test_ims_status_and_unsupported_services(self):
+        lua = next((shutil.which(x) for x in ('lua5.1', 'lua', 'lua5.4', 'luajit') if shutil.which(x)), None)
+        if not lua:
+            self.skipTest('Lua interpreter unavailable')
+        subprocess.run([lua, str(Path(__file__).with_name('ims.lua')),
+                        str(PACKAGE / 'files/ims.lua')], check=True)
+
+    def test_ims_page_and_refresh(self):
+        node = shutil.which('node')
+        if not node:
+            self.skipTest('Node unavailable')
+        subprocess.run([node, str(Path(__file__).with_name('ims.js')),
+                        str(PACKAGE / 'files/a8-ims.js')], check=True)
+
+    def test_modemmanager_ims_tab(self):
+        node = shutil.which('node')
+        if not node:
+            self.skipTest('Node unavailable')
+        subprocess.run([node, str(Path(__file__).with_name('modemmanager.js')),
+                        str(ROOT / 'openwrt-overlay/feeds/luci/protocols/luci-proto-modemmanager/htdocs/luci-static/resources/view/modemmanager/status.js'),
+                        str(PACKAGE / 'files/a8-apn.menu.json')], check=True)
+
     def test_internet_only_and_leading_zero_mnc(self):
         db = providers.compile_database(XML)
         self.assertEqual(list(db), ['45006', '234015'])

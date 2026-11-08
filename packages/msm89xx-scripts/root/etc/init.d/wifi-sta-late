@@ -72,6 +72,9 @@ stop_service() {
 			;;
 		esac
 	done
+	rm -f /tmp/wifi-sta-lease
+	kill -USR1 "$(cat /var/run/uplink-manager.pid 2>/dev/null)" 2>/dev/null
+	return 0
 }
 
 service_triggers() {

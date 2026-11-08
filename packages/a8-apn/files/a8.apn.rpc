@@ -1,5 +1,8 @@
 #!/bin/sh
 case "$1" in
-	list) echo '{"status":{}}' ;;
-	call) [ "$2" != status ] || exec /usr/sbin/a8-apn status ;;
+	list) echo '{"status":{},"ims_status":{}}' ;;
+	call) case "$2" in
+		status) exec /usr/sbin/a8-apn status ;;
+		ims_status) exec /usr/sbin/a8-apn ims-status ;;
+	esac ;;
 esac

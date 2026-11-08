@@ -1,0 +1,43 @@
+#!/usr/bin/lua
+-- SPDX-License-Identifier: GPL-2.0-or-later
+-- rpcd retains authentication; the daemon validates the SIM and call owner.
+local nixio, json = require('nixio'), require('luci.jsonc')
+local methods = {voice_status=true, voice_claim=true, voice_lease=true, voice_release=true,
+    voice_dial=true, voice_answer=true, voice_hangup=true, voice_audio=true}
+local socket
+local function run()
+    assert(methods[arg[1]])
+    local data = assert(io.stdin:read(16385))
+    assert(#data <= 16384)
+    socket = assert(nixio.socket('unix', 'stream'))
+    local timeout = arg[1] == 'voice_audio' and 2 or 10
+    assert(socket:setopt('socket', 'rcvtimeo', timeout))
+    assert(socket:setopt('socket', 'sndtimeo', timeout))
+    assert(socket:connect('/var/run/modemconfig-ko.sock'))
+    local request = 'POST /'..arg[1]..' HTTP/1.0\r\nContent-Type: application/json\r\nContent-Length: '..#data..'\r\n\r\n'..data
+    local sent, deadline = 0, os.time()+timeout+2
+    while sent < #request do
+        assert(os.time() <= deadline)
+        local n = assert(socket:send(request:sub(sent+1)))
+        assert(n > 0); sent=sent+n
+    end
+    local parts, size = {}, 0
+    while true do
+        assert(os.time() <= deadline)
+        local chunk = assert(socket:recv(4096))
+        if #chunk == 0 then break end
+        size=size+#chunk; assert(size <= 70000)
+        parts[#parts+1]=chunk
+    end
+    local response = table.concat(parts)
+    local header = assert(response:find('\r\n\r\n',1,true))
+    assert(header <= 4096 and response:match('^HTTP/1%.[01] 200 '))
+    local body = response:sub(header+4)
+    local length = response:sub(1,header):lower():match('\r\ncontent%-length: (%d+)')
+    assert(not length or #body == tonumber(length))
+    assert(#body <= 65536)
+    return assert(json.parse(body))
+end
+local ok, result = pcall(run)
+if socket then socket:close() end
+print(json.stringify(ok and result or {error='service-unavailable'}))

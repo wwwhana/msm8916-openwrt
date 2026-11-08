@@ -4,6 +4,7 @@
 		"read": {
 			"uci": [ "wifista", "wireless", "uplink" ],
 			"ubus": {
+				"a8-network": [ "status" ],
 				"service": [ "list" ]
 			},
 			"file": {

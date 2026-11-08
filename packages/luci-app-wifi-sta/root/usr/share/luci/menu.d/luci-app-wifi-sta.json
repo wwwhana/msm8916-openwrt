@@ -25,9 +25,10 @@
 			"path": "wifi-sta/config"
 		}
 	},
-	"admin/network/wifi-sta/uplink": {
-		"title": "Uplink",
-		"order": 3,
+	"admin/network/uplink": {
+		"title": "인터넷 연결",
+		"order": 35,
+		"depends": { "acl": [ "luci-app-wifi-sta" ] },
 		"action": {
 			"type": "view",
 			"path": "wifi-sta/uplink"

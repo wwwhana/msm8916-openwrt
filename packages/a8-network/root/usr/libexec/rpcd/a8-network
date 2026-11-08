@@ -1,0 +1,6 @@
+#!/bin/sh
+case "$1:$2" in
+list:) printf '{"status":{}}\n' ;;
+call:status) exec /usr/sbin/a8-network status ;;
+*) exit 1 ;;
+esac

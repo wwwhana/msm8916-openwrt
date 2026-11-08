@@ -1,0 +1,3 @@
+#!/bin/sh
+# netifd emits this event; defer reconfiguration until its event handler returns.
+case "$ACTION" in add|remove) /usr/sbin/a8-network refresh >/dev/null 2>&1 & ;; esac

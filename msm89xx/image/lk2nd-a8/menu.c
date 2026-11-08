@@ -9,6 +9,9 @@
 #include <stdio.h>
 #include <string.h>
 #include <lk2nd/device/keys.h>
+#if A8_LCD_RAM_TEST
+#include <fastboot.h>
+#endif
 #include "boot-menu.h"
 #include "stock-init.h"
 #include "tux.h"
@@ -27,6 +30,17 @@
 static struct a8_button button;
 static enum a8_button_event queued;
 static char previous[8][17];
+#if A8_LCD_RAM_TEST
+static int diagnostic_running;
+#endif
+
+static void lcd_progress(const char *stage)
+{
+    dprintf(INFO, "A8 LCD: %s\n", stage);
+#if A8_LCD_RAM_TEST
+    if (diagnostic_running) fastboot_info(stage);
+#endif
+}
 
 static void sample_button(void)
 {
@@ -67,13 +81,48 @@ static void command(unsigned char command, const unsigned char *data, unsigned s
 }
 static int read_pmic(unsigned sid, unsigned reg, unsigned char *value)
 {
-    return spmi_reg_read(sid, reg, value, 0) == 0;
+#if A8_LCD_RAM_TEST
+    if (diagnostic_running) {
+        char trace[32];
+        snprintf(trace, sizeof(trace), "Read PMIC %u:%04x", sid, reg);
+        fastboot_info(trace);
+    }
+#endif
+    unsigned error = spmi_reg_read(sid, reg, value, 0);
+    if (error) {
+        dprintf(CRITICAL, "A8 LCD: PMIC read %u:%04x failed %u\n", sid, reg, error);
+        return 0;
+    }
+#if A8_LCD_RAM_TEST
+    if (diagnostic_running) {
+        char trace[32];
+        snprintf(trace, sizeof(trace), "PMIC %u:%04x=%02x", sid, reg, *value);
+        fastboot_info(trace);
+    }
+#endif
+    return 1;
 }
 static int write_pmic(unsigned sid, unsigned reg, unsigned char value)
 {
     unsigned char actual;
-    return spmi_reg_write(sid, reg, &value, 0) == 0 &&
-        read_pmic(sid, reg, &actual) && actual == value;
+#if A8_LCD_RAM_TEST
+    if (diagnostic_running) {
+        char trace[32];
+        snprintf(trace, sizeof(trace), "Write PMIC %u:%04x=%02x", sid, reg, value);
+        fastboot_info(trace);
+    }
+#endif
+    unsigned error = spmi_reg_write(sid, reg, &value, 0);
+    if (error) {
+        dprintf(CRITICAL, "A8 LCD: PMIC write %u:%04x failed %u\n", sid, reg, error);
+        return 0;
+    }
+    if (!read_pmic(sid, reg, &actual)) return 0;
+    if (actual != value) {
+        dprintf(CRITICAL, "A8 LCD: PMIC %u:%04x read %02x, expected %02x\n", sid, reg, actual, value);
+        return 0;
+    }
+    return 1;
 }
 static int panel_init(void)
 {
@@ -81,6 +130,7 @@ static int panel_init(void)
     unsigned char range, step, enabled;
     uint32_t voltage;
     /* L6 is shared: preserve SBL's voltage. Never guess a new shared rail value. */
+    lcd_progress("Checking shared L6");
     if (!read_pmic(1, L6_BASE+0x40, &range) || !read_pmic(1, L6_BASE+0x41, &step)) return 0;
     /* PM8916 L6/L17 are ULT PLDOs: range 0, 1.75 V + selector * 12.5 mV.
      * The older PM8941 PLDO range encoding rejects this board's valid 1.8 V. */
@@ -93,17 +143,32 @@ static int panel_init(void)
         dprintf(CRITICAL, "A8 LCD: shared L6 is %u uV; leaving display off\n", voltage);
         return 0;
     }
-    if (!read_pmic(1, L6_BASE+0x46, &enabled) ||
-        !write_pmic(1, L6_BASE+0x46, enabled | 0x80)) return 0;
-    /* PM8916 L17 ULT PLDO: 1.75 V + 88 * 12.5 mV = stock 2.85 V. */
-    if (!write_pmic(1, L17_BASE+0x45, 0x80) ||
-        !write_pmic(1, L17_BASE+0x40, 0) || !write_pmic(1, L17_BASE+0x41, 88) ||
-        !write_pmic(1, L17_BASE+0x46, 0x80)) return 0;
+    /* Shared L6 also serves other hardware. Require SBL to have enabled it;
+     * even rewriting the same enable value is unnecessary for the LCD. */
+    if (!read_pmic(1, L6_BASE+0x46, &enabled)) return 0;
+    if (!(enabled & 0x80)) {
+        dprintf(CRITICAL, "A8 LCD: shared L6 is disabled; leaving it unchanged\n");
+        return 0;
+    }
+    /* L17 is RPM-managed in the working Linux device tree. The first direct
+     * SPMI write lost USB in the RAM test. Reuse a valid existing 2.85 V supply
+     * without any LDO writes; an unavailable rail must leave Fastboot usable. */
+    lcd_progress("Checking LCD supply L17");
+    if (!read_pmic(1, L17_BASE+0x40, &range) ||
+        !read_pmic(1, L17_BASE+0x41, &step) ||
+        !read_pmic(1, L17_BASE+0x46, &enabled)) return 0;
+    if ((range & 7) != 0 || step != 88 || !(enabled & 0x80)) {
+        dprintf(CRITICAL, "A8 LCD: L17 unavailable (%02x %02x %02x); leaving it unchanged\n",
+            range, step, enabled);
+        return 0;
+    }
     /* PMIC MPP mode 6 = current sink; raw sink setting 7 = stock 40 mA.
      * Register layout matches Linux pinctrl-spmi-mpp. Enable only after drawing. */
+    lcd_progress("Preparing backlight MPP4");
     if (!write_pmic(0, MPP4_BASE+0x46, 0) ||
         !write_pmic(0, MPP4_BASE+0x40, 0x60) ||
         !write_pmic(0, MPP4_BASE+0x4c, 7)) return 0;
+    lcd_progress("Initializing SPI panel");
     output(CS, GPIO_2MA, 1);
     output(CLK, GPIO_12MA, 0);
     output(MOSI, GPIO_12MA, 0);
@@ -125,7 +190,10 @@ static void draw_row(unsigned row, const char *text)
     unsigned x,y;
     char line[17];
     unsigned char columns[]={0,0,0,127}, rows[]={0,row*16,0,row*16+15};
-    snprintf(line, sizeof(line), "%-16.16s", text);
+    /* LK's formatter ignores precision and treats 16.16 as a width of 1616. */
+    memset(line, ' ', 16);
+    for (x=0; x<16 && text[x]; ++x) line[x]=text[x];
+    line[16]=0;
     if (!memcmp(line, previous[row], 17)) return;
     memcpy(previous[row], line, 17);
     command(0x2a, columns, 4); command(0x2b, rows, 4);
@@ -148,7 +216,7 @@ static void draw_menu(const struct a8_boot_state *state, uint32_t now)
     static const char *labels[]={"OpenWrt", "Recovery", "Fastboot USB", "EDL / USB 9008"};
     char text[32];
     unsigned i, elapsed=(uint32_t)(now-state->started)/1000;
-    draw_row(0, "A8 boot menu");
+    draw_row(0, "Boot menu");
     for (i=0; i<4; ++i) {
         snprintf(text, sizeof(text), "%c %s", state->selected == i ? '>' : ' ', labels[i]);
         draw_row(i+1, text);
@@ -165,6 +233,7 @@ int a8_boot_splash(const char *mode)
         dprintf(CRITICAL, "A8 LCD unavailable; continue boot\n");
         return 0;
     }
+    lcd_progress("Drawing Tux and text");
     command(0x2a, columns, 4); command(0x2b, rows, 4);
     set_pin(CS, 0); set_pin(DC, 0); spi_byte(0x2c); set_pin(DC, 1);
     for (y=0; y<96; ++y) {
@@ -175,11 +244,29 @@ int a8_boot_splash(const char *mode)
     }
     set_pin(CS, 1);
     draw_row(6, mode); draw_row(7, "Starting...");
+    lcd_progress("Enabling backlight");
     if (!write_pmic(0, MPP4_BASE+0x40, 0x61) || !write_pmic(0, MPP4_BASE+0x46, 0x80))
         return 0;
     thread_sleep(750);
+    lcd_progress("Display ready");
     return 1;
 }
+#if A8_LCD_RAM_TEST
+static void lcd_diagnostic(const char *arg, void *data, unsigned size)
+{
+    (void)arg; (void)data; (void)size;
+    diagnostic_running=1;
+    int ready=a8_boot_splash("Fastboot USB");
+    diagnostic_running=0;
+    if (ready) fastboot_okay("");
+    else fastboot_fail("A8 LCD initialization failed; Fastboot remains available");
+}
+static void lcd_diagnostic_register(void)
+{
+    fastboot_register("oem a8-lcd", lcd_diagnostic);
+}
+FASTBOOT_INIT(lcd_diagnostic_register);
+#endif
 enum a8_boot_choice a8_boot_menu(void)
 {
     struct a8_boot_state state={.selected=0, .interactive=0};

@@ -1,6 +1,7 @@
 # Concurrent AP+STA and the Station Mode LuCI app
 
-*Status: shipped and verified on the HMUF02-V5 (2026-10-24 / 2026-10-25).*
+*Status: shipped on HMUF02-V5; the scan and switch updates below were also
+checked on HM-MiFiB-V18 on 2026-11-07.*
 
 The WCN36xx radio can act as an access point **and** as a client of another
 access point at the same time.  This document is the user-facing guide to that
@@ -83,6 +84,24 @@ Save & Apply; the device keeps trying the other networks meanwhile.
 The service restarts immediately; the station is normally associated within a
 few seconds.  **Overview** shows the live state, refreshed every 5 s.
 
+### Nearby networks
+
+The scan button calls `/usr/sbin/wifi-sta-up scan`. The helper resolves the
+current AP/station interface on every request, including after a driver
+recovery changes the interface name. It works while the relay switch is off.
+When a station supplicant is present, it owns the scan request; the UI uses
+its radio's BSS cache instead of starting a competing AP scan. Without a
+supplicant, the helper attempts a bounded AP scan and then checks cached
+results. It does not restart the AP for a UI scan.
+
+Cached results are labelled **Recent scan results**. A failed scan without
+cached entries reports an error rather than an empty successful scan. The
+parser accepts `iw` and older `iwinfo` output, including escaped UTF-8 SSIDs.
+On V18 the helper returned cached networks when `iwinfo` scanning reported
+no completion event. The number and freshness depend on the driver and
+available upstream networks; this does not prove a new full-band scan ran.
+Four host checks cover helper selection, parsing and failed-scan reporting.
+
 ### The same thing from the shell
 
 ```sh
@@ -106,7 +125,7 @@ uci commit wifista
 | `enabled` | `0` | Master switch.  Off by default — the service exits immediately. |
 | `ssid` / `key` | *(empty)* | **Legacy single network** — only used while no `ap` section exists (the LuCI page migrates the pair into a row on first save).  `ssid` empty = no network at all; the station stays idle (logged once, then retried every 5 min). |
 | `macaddr` | *(empty — derived)* | Address for the station vif.  Leave it empty and the service derives one from the AP's (last octet + 1, stable across reboots).  It **must differ from the AP's**: an `iw`-created vif otherwise clones the AP's address and `ip link set up` fails with a misleading `RTNETLINK answers: No error information`. |
-| `dhcp` | `1` | Run `udhcpc`.  The lease installs **only** the address — no default route, so the LTE/mobile path stays the default. |
+| `dhcp` | `1` | Run `udhcpc`. The lease installs an address and metric-100 candidate route. The uplink manager selects LTE or Wi-Fi according to the saved policy. |
 | `hostname` | *(empty)* | Name announced to the upstream network as DHCP option 12 (`udhcpc -x hostname:…`), so the upstream router can resolve this device by name.  Empty = the system hostname (`system.@system[0].hostname`, else the kernel's). |
 | `radio` | `radio0` | Which radio's channel follows the upstream. |
 | `recover_after` | `60` | Seconds the station may stay down before the watchdog recycles it. `0` disables the check. |

@@ -1,11 +1,11 @@
 #!/bin/sh
-# uplink-manager: chooses the active default route between the LTE modem (wwan0)
-# and the Wi-Fi station (phy0-sta0), with health probes and a user policy.
+# uplink-manager: chooses LTE, USB Ethernet or Wi-Fi with health probes.
 #
 # Route ladder (lower metric wins):
-#   40  STA override   -- installed only when the STA must win (active link)
+#   40  selected Wi-Fi/USB uplink
 #   50  modem default  -- installed by netifd, normalized to 50 here
 #  100  STA candidate  -- installed by wifi-sta-dhcp.sh on lease (modem wins while present)
+#  150  USB candidate  -- available for probes, disabled in LTE-only mode
 #
 # netifd owns the modem L3; wifi-sta-dhcp.sh owns the STA L3.  This manager only
 # adds/removes the 40 override and the 100 candidate, and points dnsmasq at the
@@ -43,8 +43,10 @@ load_config() {
 
 modem_ok=0; modem_dev=""; modem_gw=""
 sta_ok=0; sta_dev=""; sta_gw=""; sta_dns=""
+ethernet_ok=0; ethernet_dev=""; ethernet_gw=""; ethernet_dns=""
 modem_good=0; modem_bad=0; sta_good=0; sta_bad=0
-prev_active=""; prev_dns_value=""
+ethernet_good=0; ethernet_bad=0
+prev_active=""; prev_dns_value="__unset__"
 
 probe() {
 	ping -I "$1" -c 1 -w "$probe_timeout" "$probe_target" >/dev/null 2>&1
@@ -52,12 +54,33 @@ probe() {
 
 read_modem() {
 	modem_ok=0; modem_dev=""; modem_gw=""
-	local up
-	up=$(ubus call network.interface.modem status 2>/dev/null | jsonfilter -e '@.up' 2>/dev/null)
+	local status up
+	status=$(ubus call network.interface.modem status 2>/dev/null)
+	up=$(printf '%s' "$status" | jsonfilter -e '@.up' 2>/dev/null)
 	[ "$up" = "true" ] || return
-	modem_dev=$(ubus call network.interface.modem status 2>/dev/null | jsonfilter -e '@.l3_device' 2>/dev/null)
-	modem_gw=$(ubus call network.interface.modem status 2>/dev/null | jsonfilter -e '@.route[@.target="0.0.0.0/0"].nexthop' 2>/dev/null | head -1)
+	modem_dev=$(printf '%s' "$status" | jsonfilter -e '@.l3_device' 2>/dev/null)
+	modem_gw=$(printf '%s' "$status" | jsonfilter -e '@.route[@.target="0.0.0.0" && @.mask=0].nexthop' 2>/dev/null | head -1)
 	[ -n "$modem_dev" ] && [ -n "$modem_gw" ] && modem_ok=1
+}
+
+normalize_modem_route() {
+	local metrics metric
+	metrics=$(ip -4 route show default dev "$modem_dev" 2>/dev/null | awk -v gw="$modem_gw" '
+		{ gateway=""; metric=0
+		  for (i=1; i<NF; i++) {
+		    if ($i=="via") gateway=$(i+1)
+		    if ($i=="metric") metric=$(i+1)
+		  }
+		  if (gateway==gw) print metric
+		}')
+	[ -n "$metrics" ] || return 0
+	[ "$metrics" = "$modem_metric" ] && return 0
+	# replace adds a new metric; remove the old one only after the new route exists.
+	ip -4 route replace default via "$modem_gw" dev "$modem_dev" metric "$modem_metric" || return
+	for metric in $metrics; do
+		[ "$metric" = "$modem_metric" ] ||
+			ip -4 route del default via "$modem_gw" dev "$modem_dev" metric "$metric"
+	done
 }
 
 read_sta() {
@@ -79,7 +102,7 @@ apply_dns() {
 	# DHCP renew) is applied even when the STA stays the active link.
 	local a="$1"
 	local want="$sta_dns_eff"
-	[ "$a" = "sta" ] || want=""
+	case "$a" in sta) ;; ethernet) want="$ethernet_dns" ;; *) want="" ;; esac
 	[ "$want" = "$prev_dns_value" ] && return
 	prev_dns_value="$want"
 	uci -q del dhcp.@dnsmasq[0].server
@@ -97,14 +120,38 @@ write_json() {
   "policy": "$policy",
   "modem": { "present": $modem_ok, "healthy": $modem_healthy, "device": "$modem_dev", "gateway": "$modem_gw" },
   "sta": { "present": $sta_ok, "healthy": $sta_healthy, "device": "$sta_dev", "gateway": "$sta_gw", "dns": "$sta_dns_eff" },
+  "ethernet": { "present": $ethernet_ok, "healthy": $ethernet_healthy, "device": "$ethernet_dev", "gateway": "$ethernet_gw", "dns": "$ethernet_dns" },
   "since": "$(date +%s)"
 }
 EOF
 }
 
+read_ethernet() {
+	ethernet_ok=0; ethernet_dev=""; ethernet_gw=""; ethernet_dns=""
+	[ "$(uci -q get uplink.general.usb_ethernet)" = wan ] || return 0
+	local status up
+	status=$(ubus call network.interface.usbwan status 2>/dev/null)
+	up=$(printf '%s' "$status" | jsonfilter -e '@.up' 2>/dev/null)
+	[ "$up" = true ] || return 0
+	ethernet_dev=$(printf '%s' "$status" | jsonfilter -e '@.l3_device' 2>/dev/null)
+	# defaultroute=0 leaves the DHCP gateway in netifd's inactive routes.
+	ethernet_gw=$(printf '%s' "$status" | jsonfilter \
+		-e '@.route[@.target="0.0.0.0" && @.mask=0].nexthop' \
+		-e '@.inactive.route[@.target="0.0.0.0" && @.mask=0].nexthop' 2>/dev/null | head -1)
+	ethernet_dns=$(printf '%s' "$status" | jsonfilter -e '@["dns-server"][*]' \
+		-e '@.inactive["dns-server"][*]' 2>/dev/null | tr '\n' ' ')
+	[ -n "$ethernet_dev" ] && [ -n "$ethernet_gw" ] && ethernet_ok=1
+}
+
 cycle() {
-	read_modem; read_sta
+	read_modem; read_sta; read_ethernet
 	sta_dns_eff="$dns_override"; [ -z "$sta_dns_eff" ] && sta_dns_eff="$sta_dns"
+	# The unselected USB link still needs a route for interface-bound probes.
+	if [ "$ethernet_ok" = 1 ] && [ "$policy" != modem ]; then
+		ip route replace default via "$ethernet_gw" dev "$ethernet_dev" metric 150
+	else
+		ip route del default metric 150 2>/dev/null
+	fi
 
 	if [ "$modem_ok" = 1 ]; then
 		if probe "$modem_dev"; then modem_good=$((modem_good+1)); modem_bad=0
@@ -117,10 +164,15 @@ cycle() {
 		else sta_bad=$((sta_bad+1)); sta_good=0; fi
 	else sta_good=0; sta_bad=$fail_threshold; fi
 	sta_healthy=$( [ "$sta_ok" = 1 ] && [ "$sta_bad" -lt "$fail_threshold" ] && echo 1 || echo 0 )
+	if [ "$ethernet_ok" = 1 ]; then
+		if probe "$ethernet_dev"; then ethernet_good=$((ethernet_good+1)); ethernet_bad=0
+		else ethernet_bad=$((ethernet_bad+1)); ethernet_good=0; fi
+	else ethernet_good=0; ethernet_bad=$fail_threshold; fi
+	ethernet_healthy=$( [ "$ethernet_ok" = 1 ] && [ "$ethernet_bad" -lt "$fail_threshold" ] && echo 1 || echo 0 )
 
 	# Normalize the modem default route to our metric (no traffic interruption).
 	if [ "$modem_ok" = 1 ]; then
-		ip route show default 2>/dev/null | grep -q "via $modem_gw dev $modem_dev" && 			ip route replace default via "$modem_gw" dev "$modem_dev" metric "$modem_metric"
+		normalize_modem_route
 	fi
 
 	# STA candidate route tracks policy + presence.
@@ -137,15 +189,23 @@ cycle() {
 			[ "$modem_healthy" = 1 ] && active="modem" ;;
 		sta)
 			if [ "$sta_healthy" = 1 ]; then active="sta"
+			elif [ "$ethernet_healthy" = 1 ]; then active="ethernet"
 			elif [ "$modem_healthy" = 1 ]; then active="modem"; fi ;;
+		ethernet)
+			if [ "$ethernet_healthy" = 1 ]; then active="ethernet"
+			elif [ "$modem_healthy" = 1 ]; then active="modem"
+			elif [ "$sta_healthy" = 1 ]; then active="sta"; fi ;;
 		*)
 			if [ "$modem_healthy" = 1 ]; then active="modem"
+			elif [ "$ethernet_healthy" = 1 ]; then active="ethernet"
 			elif [ "$sta_healthy" = 1 ]; then active="sta"; fi ;;
 	esac
 
 	# Apply the STA override when the STA is the active link.
 	if [ "$active" = "sta" ]; then
 		ip route replace default via "$sta_gw" dev "$sta_dev" metric "$override_metric"
+	elif [ "$active" = "ethernet" ]; then
+		ip route replace default via "$ethernet_gw" dev "$ethernet_dev" metric "$override_metric"
 	else
 		ip route del default metric "$override_metric" 2>/dev/null
 	fi
@@ -153,7 +213,7 @@ cycle() {
 	apply_dns "$active"
 
 	if [ "$active" != "$prev_active" ]; then
-		logger -t uplink "active=$active (policy=$policy, modem present=$modem_ok healthy=$modem_healthy, sta present=$sta_ok healthy=$sta_healthy)"
+		logger -t uplink "active=$active (policy=$policy, modem healthy=$modem_healthy, sta healthy=$sta_healthy, ethernet healthy=$ethernet_healthy)"
 		prev_active="$active"
 	fi
 	write_json
@@ -162,6 +222,8 @@ cycle() {
 wake=0
 reload=0
 trap 'wake=1; reload=1' USR1
+printf '%s\n' "$$" > "$PIDFILE"
+trap 'rm -f "$PIDFILE"' EXIT
 
 load_config
 

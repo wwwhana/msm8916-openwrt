@@ -18,8 +18,11 @@ USE_PROCD=1
 PROG=/usr/bin/bluetoothd
 
 start_service() {
+	local config
 	ln -snf /etc/bluetooth/keys/ /var/lib/bluetooth
+	config=/etc/bluetooth/main.conf
+	[ ! -x /usr/sbin/bt-compat ] || config=$(/usr/sbin/bt-compat config) || return 1
 	procd_open_instance
-	procd_set_param command "$PROG" -n --compat
+	procd_set_param command "$PROG" -n --compat -f "$config"
 	procd_close_instance
 }

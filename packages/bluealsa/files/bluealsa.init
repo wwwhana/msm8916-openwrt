@@ -1,0 +1,20 @@
+#!/bin/sh /etc/rc.common
+USE_PROCD=1
+START=72
+STOP=18
+
+start_service() {
+    local binary=/usr/bin/bluealsa
+    local private=/usr/lib/modemconfig-ko/bluealsa
+    [ ! -x "$private/bluealsa" ] || binary="$private/bluealsa"
+    [ -x "$binary" ] || return 1
+    mkdir -p /var/lib/bluealsa
+    chmod 700 /var/lib/bluealsa
+    procd_open_instance
+    procd_set_param command "$binary" -S -p hfp-ag -p hsp-ag
+    procd_set_param env "LD_LIBRARY_PATH=$private/lib"
+    procd_set_param respawn 3600 5 5
+    procd_set_param stdout 0
+    procd_set_param stderr 1
+    procd_close_instance
+}

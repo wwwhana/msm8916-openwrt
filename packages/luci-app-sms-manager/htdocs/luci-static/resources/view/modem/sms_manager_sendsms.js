@@ -5,6 +5,7 @@
 'require ui';
 'require uci';
 'require view';
+'require sms_manager as sms';
 
 /*
 	Copyright 2022-2026 Rafał Wabik - IceG - From eko.one.pl forum
@@ -14,258 +15,10 @@
 
 return view.extend({
 
-	isUnicode: function(text) {
-		// Chars GSM-7
-		const gsm7chars = '@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !"#¤%&\'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà';
-		const gsm7extended = '^{}\\[~]|€';
-		
-		for (let i = 0; i < text.length; i++) {
-			let char = text.charAt(i);
-			if (gsm7chars.indexOf(char) === -1 && gsm7extended.indexOf(char) === -1) {
-				return true; // None GSM-7
-			}
-		}
-		return false; // All GSM-7
-	},
-
-	getGSM7Length: function(text) {
-		const gsm7extended = '^{}\\[~]|€';
-		let length = 0;
-		
-		for (let i = 0; i < text.length; i++) {
-			let char = text.charAt(i);
-			if (gsm7extended.indexOf(char) !== -1) {
-				length += 2;
-			} else {
-				length += 1;
-			}
-		}
-		return length;
-	},
-
-	getUnicodeLength: function(text) {
-		let length = 0;
-		
-		for (let i = 0; i < text.length; i++) {
-			let charCode = text.charCodeAt(i);
-			
-			if (charCode >= 0xD800 && charCode <= 0xDBFF) {
-				length += 2;
-				i++;
-			} else {
-				length += 1;
-			}
-		}
-		return length;
-	},
-
-	normalizeToGSM7: function(text) {
-		return text
-			// PL
-			.replace(/ą/g, 'a').replace(/Ą/g, 'A')
-			.replace(/ć/g, 'c').replace(/Ć/g, 'C')
-			.replace(/ę/g, 'e').replace(/Ę/g, 'E')
-			.replace(/ł/g, 'l').replace(/Ł/g, 'L')
-			.replace(/ń/g, 'n').replace(/Ń/g, 'N')
-			.replace(/ó/g, 'o').replace(/Ó/g, 'O')
-			.replace(/ś/g, 's').replace(/Ś/g, 'S')
-			.replace(/ż/g, 'z').replace(/Ż/g, 'Z')
-			.replace(/ź/g, 'z').replace(/Ź/g, 'Z')
-			// EU
-			.replace(/á/g, 'a').replace(/Á/g, 'A')
-			.replace(/â/g, 'a').replace(/Â/g, 'A')
-			.replace(/ã/g, 'a').replace(/Ã/g, 'A')
-			.replace(/ā/g, 'a').replace(/Ā/g, 'A')
-			.replace(/č/g, 'c').replace(/Č/g, 'C')
-			.replace(/ď/g, 'd').replace(/Ď/g, 'D')
-			.replace(/đ/g, 'd').replace(/Đ/g, 'D')
-			.replace(/é/g, 'e').replace(/É/g, 'E')
-			.replace(/ě/g, 'e').replace(/Ě/g, 'E')
-			.replace(/ë/g, 'e').replace(/Ë/g, 'E')
-			.replace(/ê/g, 'e').replace(/Ê/g, 'E')
-			.replace(/ē/g, 'e').replace(/Ē/g, 'E')
-			.replace(/í/g, 'i').replace(/Í/g, 'I')
-			.replace(/î/g, 'i').replace(/Î/g, 'I')
-			.replace(/ï/g, 'i').replace(/Ï/g, 'I')
-			.replace(/ī/g, 'i').replace(/Ī/g, 'I')
-			.replace(/ľ/g, 'l').replace(/Ľ/g, 'L')
-			.replace(/ň/g, 'n').replace(/Ň/g, 'N')
-			.replace(/ô/g, 'o').replace(/Ô/g, 'O')
-			.replace(/õ/g, 'o').replace(/Õ/g, 'O')
-			.replace(/ö/g, 'o').replace(/Ö/g, 'O')
-			.replace(/ő/g, 'o').replace(/Ő/g, 'O')
-			.replace(/ř/g, 'r').replace(/Ř/g, 'R')
-			.replace(/š/g, 's').replace(/Š/g, 'S')
-			.replace(/ş/g, 's').replace(/Ş/g, 'S')
-			.replace(/ť/g, 't').replace(/Ť/g, 'T')
-			.replace(/ú/g, 'u').replace(/Ú/g, 'U')
-			.replace(/ů/g, 'u').replace(/Ů/g, 'U')
-			.replace(/û/g, 'u').replace(/Û/g, 'U')
-			.replace(/ü/g, 'u').replace(/Ü/g, 'U')
-			.replace(/ű/g, 'u').replace(/Ű/g, 'U')
-			.replace(/ý/g, 'y').replace(/Ý/g, 'Y')
-			.replace(/ÿ/g, 'y').replace(/Ÿ/g, 'Y')
-			.replace(/ž/g, 'z').replace(/Ž/g, 'Z')
-			// SPECIAL
-			.replace(/–/g, '-').replace(/—/g, '-')
-			.replace(/'/g, '\'').replace(/'/g, '\'')
-			.replace(/"/g, '"').replace(/"/g, '"')
-			.replace(/„/g, '"').replace(/"/g, '"')
-			.replace(/«/g, '"').replace(/»/g, '"')
-			.replace(/…/g, '...').replace(/·/g, '.')
-			.replace(/•/g, '*').replace(/‣/g, '*')
-			.replace(/°/g, 'o').replace(/º/g, 'o')
-			.replace(/†/g, '+').replace(/‡/g, '+')
-			.replace(/¹/g, '1').replace(/²/g, '2').replace(/³/g, '3')
-			.replace(/¼/g, '1/4').replace(/½/g, '1/2').replace(/¾/g, '3/4')
-			.replace(/×/g, 'x').replace(/÷/g, '/')
-			.replace(/±/g, '+/-')
-			.replace(/≈/g, '~').replace(/≠/g, '!=')
-			.replace(/≤/g, '<=').replace(/≥/g, '>=')
-			.replace(/←/g, '<-').replace(/→/g, '->')
-			.replace(/↑/g, '^').replace(/↓/g, 'v')
-			// Emoji, etc.
-			.replace(/[\u{1F600}-\u{1F64F}]/gu, ':)')
-			.replace(/[\u{1F300}-\u{1F5FF}]/gu, '')
-			.replace(/[\u{1F680}-\u{1F6FF}]/gu, '')
-			.replace(/[\u{1F700}-\u{1F77F}]/gu, '')
-			.replace(/[\u{1F780}-\u{1F7FF}]/gu, '')
-			.replace(/[\u{1F800}-\u{1F8FF}]/gu, '')
-			.replace(/[\u{1F900}-\u{1F9FF}]/gu, '')
-			.replace(/[\u{1FA00}-\u{1FA6F}]/gu, '')
-			.replace(/[\u{1FA70}-\u{1FAFF}]/gu, '')
-			.replace(/[\u{2600}-\u{26FF}]/gu, '')
-			.replace(/[\u{2700}-\u{27BF}]/gu, '')
-			// UNSUPPORTED
-			.replace(/[^\x00-\x7F@£$¥èéùìòÇØøÅåΔΦΓΛΩΠΨΣΘΞÆæßÉ¡¤§¿äöñüà^{}\\[\]~|€]/g, '');
-	},
-
 	updateMessageCounter: function() {
-		let textarea = document.getElementById('smstext');
-		let text = textarea.value;
-		let counter = document.getElementById('counter');
-		let gsm7Radio = document.querySelector('input[name="encoding_type"][value="gsm7"]');
-		let unicodeRadio = document.querySelector('input[name="encoding_type"][value="unicode"]');
-		
-		if (this.isUnicode(text)) {
-			unicodeRadio.checked = true;
-			let maxLength = 70;
-			let currentLength = this.getUnicodeLength(text);
-			counter.innerHTML = (maxLength - currentLength);
-			
-			if (currentLength > maxLength) {
-				let newText = '';
-				let length = 0;
-				for (let i = 0; i < text.length; i++) {
-					let charCode = text.charCodeAt(i);
-					let charLength = 1;
-					
-					if (charCode >= 0xD800 && charCode <= 0xDBFF && i + 1 < text.length) {
-						charLength = 2;
-						if (length + charLength <= maxLength) {
-							newText += text.charAt(i) + text.charAt(i + 1);
-							i++;
-						} else {
-							break;
-						}
-					} else {
-						if (length + charLength <= maxLength) {
-							newText += text.charAt(i);
-						} else {
-							break;
-						}
-					}
-					length += charLength;
-				}
-				textarea.value = newText;
-				counter.innerHTML = (maxLength - length);
-			}
-		} else {
-			gsm7Radio.checked = true;
-			let maxLength = 160;
-			let currentLength = this.getGSM7Length(text);
-			counter.innerHTML = (maxLength - currentLength);
-			
-			if (currentLength > maxLength) {
-				let newText = '';
-				let length = 0;
-				for (let i = 0; i < text.length; i++) {
-					let char = text.charAt(i);
-					let charLength = ('^{}\\[~]|€'.indexOf(char) !== -1) ? 2 : 1;
-					if (length + charLength <= maxLength) {
-						newText += char;
-						length += charLength;
-					} else {
-						break;
-					}
-				}
-				textarea.value = newText;
-				counter.innerHTML = (maxLength - length);
-			}
-		}
-	},
-
-	handleEncodingChange: function(ev) {
-		let textarea = document.getElementById('smstext');
-		let text = textarea.value;
-		let encodingType = ev.target.value;
-		let counter = document.getElementById('counter');
-		
-		if (encodingType === 'gsm7') {
-			textarea.value = this.normalizeToGSM7(text);
-			let currentLength = this.getGSM7Length(textarea.value);
-			let maxLength = 160;
-			
-			if (currentLength > maxLength) {
-				let newText = '';
-				let length = 0;
-				for (let i = 0; i < textarea.value.length; i++) {
-					let char = textarea.value.charAt(i);
-					let charLength = ('^{}\\[~]|€'.indexOf(char) !== -1) ? 2 : 1;
-					if (length + charLength <= maxLength) {
-						newText += char;
-						length += charLength;
-					} else {
-						break;
-					}
-				}
-				textarea.value = newText;
-				currentLength = this.getGSM7Length(textarea.value);
-			}
-			counter.innerHTML = (maxLength - currentLength);
-		} else {
-			let maxLength = 70;
-			let currentLength = this.getUnicodeLength(textarea.value);
-			
-			if (currentLength > maxLength) {
-				let newText = '';
-				let length = 0;
-				for (let i = 0; i < textarea.value.length; i++) {
-					let charCode = textarea.value.charCodeAt(i);
-					let charLength = 1;
-					
-					if (charCode >= 0xD800 && charCode <= 0xDBFF && i + 1 < text.length) {
-						charLength = 2;
-						if (length + charLength <= maxLength) {
-							newText += textarea.value.charAt(i) + textarea.value.charAt(i + 1);
-							i++;
-						} else {
-							break;
-						}
-					} else {
-						if (length + charLength <= maxLength) {
-							newText += textarea.value.charAt(i);
-						} else {
-							break;
-						}
-					}
-					length += charLength;
-				}
-				textarea.value = newText;
-				currentLength = this.getUnicodeLength(textarea.value);
-			}
-			counter.innerHTML = (maxLength - currentLength);
-		}
+		const info = sms.measure(document.getElementById('smstext').value);
+		document.getElementById('encoding').textContent = info.encoding;
+		document.getElementById('counter').textContent = info.units + ' / ' + info.parts + ' SMS';
 	},
 
 	handleCommand: function(exec, args) {
@@ -278,29 +31,8 @@ return view.extend({
 			let out = document.querySelector('.smscommand-output');
 			out.style.display = '';
 
-			res.stdout = res.stdout?.replace(/^(?=\n)$|^\s*|\s*$|\n\n+/gm, "") || '';
-			res.stderr = res.stderr?.replace(/^(?=\n)$|^\s*|\s*$|\n\n+/gm, "") || '';
-
-			if (res.stdout === undefined || res.stderr === undefined || res.stderr.includes('undefined') || res.stdout.includes('undefined')) {
-				return;
-			}
-			else {
-				let message = '';
-				
-				if (res.stdout.includes('successfully sent') || res.stdout.includes('SMS created')) {
-					message = _('SMS sent successfully!');
-				} else if (res.stderr.length > 0) {
-					if (res.stderr.includes('error')) {
-						message = _('Error sending SMS: ') + res.stderr;
-					} else {
-						message = res.stdout || res.stderr;
-					}
-				} else {
-					message = res.stdout || _('SMS sent.');
-				}
-				
-				dom.content(out, [ message ]);
-			}
+			dom.content(out, [res.code === 0 ? _('SMS sent successfully!') :
+				_('Error sending SMS: ') + (res.stderr || res.stdout || _('Unknown error'))]);
 
 		}).catch(function(err) {
 			ui.addNotification(null, E('p', [ _('Error: ') + err ]));
@@ -316,7 +48,8 @@ return view.extend({
 		let num = document.getElementById('phonenumber').value;
 		let body = document.getElementById('smstext').value;
 
-		if (num.length < 3) {
+		let sendtype = ev.target.getAttribute('data-action');
+		if (sendtype !== 'sendg' && num.length < 3) {
 			ui.addNotification(null, E('p', _('Please specify the phone number')), 'info');
 			return false;
 		}
@@ -331,8 +64,6 @@ return view.extend({
 			return false;
 		}
 
-		let sendtype = ev.target.getAttribute('data-action');
-		
 		if (sendtype === 'sendg') {
 			return fs.read_direct('/etc/modem/sms_manager_phonebook.user').then(L.bind(function(phonebook) {
 				if (!phonebook || phonebook.trim().length === 0) {
@@ -362,14 +93,20 @@ return view.extend({
 				for (let i = 0; i < numbers.length; i++) {
 					(function(index) {
 						setTimeout(function() {
-							fs.exec('/usr/bin/mmcli', ['-m', modemNum, '--messaging-create-sms=number=' + numbers[index] + ',text=' + body])
+							sms.create(modemNum, numbers[index], body, sections[0].pnumber, sections[0].smsc)
 								.then(function(createRes) {
 									let smsMatch = createRes.stdout.match(/\/SMS\/(\d+)/);
 									if (smsMatch) {
 										let smsId = smsMatch[1];
 										// Send SMS
-										return fs.exec('/usr/bin/mmcli', ['-s', smsId, '--send']);
+										return fs.exec('/usr/bin/mmcli', ['-s', smsId, '--send']).then(function(res) {
+											if (res.code !== 0) throw new Error(res.stderr || _('Failed to send SMS'));
+										});
+									} else {
+										throw new Error(_('Failed to create SMS'));
 									}
+								}).catch(function(err) {
+									ui.addNotification(null, E('p', _('Error sending SMS: ') + err.message), 'error');
 								});
 						}, dx * index);
 					})(i);
@@ -381,7 +118,7 @@ return view.extend({
 		} else {
 			let modemNum = modemPath.split('/').pop();
 
-			return fs.exec('/usr/bin/mmcli', ['-m', modemNum, '--messaging-create-sms=number=' + num + ',text=' + body])
+			return sms.create(modemNum, num, body, sections[0].pnumber, sections[0].smsc)
 				.then(L.bind(function(createRes) {
 					let smsMatch = createRes.stdout.match(/\/SMS\/(\d+)/);
 					if (smsMatch) {
@@ -407,11 +144,7 @@ return view.extend({
 		let ov2 = document.getElementById('smstext');
 		ov2.value = '';
 
-		document.getElementById('counter').innerHTML = '160';
-
-		// Reset to GSM-7
-		let gsm7Radio = document.querySelector('input[name="encoding_type"][value="gsm7"]');
-		if (gsm7Radio) gsm7Radio.checked = true;
+		this.updateMessageCounter();
 
 		let prefixnum, sections = uci.sections('sms_manager');
 		let addprefix = sections[0].prefix;
@@ -461,7 +194,7 @@ return view.extend({
 		prefixnum = sections[0].pnumber;
 	}
 	if ( sections[0].information == '1' ) {
-		ui.addNotification(null, E('p', _('The phone number should be preceded by the country prefix (for Poland it is +48).') ), 'info');
+		ui.addNotification(null, E('p', _('Enter a domestic number or an international number beginning with +.') ), 'info');
 	}
 		
 		let info = _('User interface for sending messages using ModemManager.');
@@ -495,65 +228,18 @@ return view.extend({
 							E('div', { 'class': 'cbi-value-field' }, [
 							E('input', {
 								'style': 'margin:5px 0; width:100%;',
-								'type': 'text',
+								'type': 'tel',
 								'id': 'phonenumber',
 								'value': prefixnum,
-								'oninput': "this.value = this.value.replace(/[^0-9.]/g, '');",
-								'data-tooltip': _('Press [Delete] to delete the phone number'),
-								'keydown': function(ev) {
-									 if (ev.keyCode === 46)  
-										{
-										let del = document.getElementById('phonenumber');
-											if (del) {
-												let ovc = document.getElementById('phonenumber');
-												let prefixnum, sections = uci.sections('sms_manager');
-												let addprefix = sections[0].prefix;
-												if ( addprefix == '1' )
-													{
-													prefixnum = sections[0].pnumber;
-													ovc.value = prefixnum;
-													}
-												else {
-													ovc.value = '';
-												}
-												document.getElementById('phonenumber').focus();
-											}
-										}
-								},																													
+								'inputmode': 'tel',
+								'placeholder': sections[0].pnumber === '+82' ? '010-1234-5678' : '+...',
 								}),
 							])
 						]),
 						E('div', { 'class': 'cbi-value' }, [
-							E('label', { 'class': 'cbi-value-title' }, [ _('Encoding standard') ]),
-							E('div', { 'class': 'cbi-value-field', 'style': 'text-align: left;' }, [
-								E('div', { 'style': 'margin: 1px 0; display: inline-block;' }, [
-									E('label', {
-										'data-tooltip': _('GSM-7 encoding (160 characters)')
-									}, [
-										E('input', {
-											'type': 'radio',
-											'name': 'encoding_type',
-											'value': 'gsm7',
-											'change': ui.createHandlerFn(this, 'handleEncodingChange'),
-											'checked': true
-										}),
-										' ',
-										_('GSM-7 (160 characters)')
-									]),
-									' \u00a0\u00a0\u00a0 ',
-									E('label', {
-										'data-tooltip': _('Unicode encoding (70 characters)')
-									}, [
-										E('input', {
-											'type': 'radio',
-											'name': 'encoding_type',
-											'value': 'unicode',
-											'change': ui.createHandlerFn(this, 'handleEncodingChange')
-										}),
-										' ',
-										_('Unicode (70 characters)')
-									])
-								])
+							E('label', { 'class': 'cbi-value-title' }, [ _('Message format') ]),
+							E('div', { 'class': 'cbi-value-field' }, [
+								E('span', { 'id': 'encoding' }, _('Automatic'))
 							])
 						]),
 						E('div', { 'class': 'cbi-value' }, [
@@ -565,33 +251,14 @@ return view.extend({
 								'wrap': 'on',
 								'rows': '3',
 								'placeholder': _(''),
-								'data-tooltip': _('Press [Delete] to delete the content of the message'),
-								'keydown': function(ev) {
-									 if (ev.keyCode === 46)  
-										{
-										let del = document.getElementById('smstext');
-											if (del) {
-												let ovtxt = document.getElementById('smstext');
-												ovtxt.value = '';
-												document.getElementById('counter').innerHTML = '160';
-												// Reset to GSM-7
-												let gsm7Radio = document.querySelector('input[name="encoding_type"][value="gsm7"]');
-												if (gsm7Radio) gsm7Radio.checked = true;
-												document.getElementById('smstext').focus();
-											}
-										}
-								},
-								'keyup': function(ev) {
-									self.updateMessageCounter();
-								},
 								'input': function(ev) {
 									self.updateMessageCounter();
 								}
 							}),
 								E('div', { 'class': 'left' }, [
 								E('br'),
-								E('label', {}, [ _('Characters remaining:')+' ' ]),
-								E('label', { 'id': 'counter' }, [ _('160') ])
+								E('label', {}, [ _('Length / estimated SMS segments:')+' ' ]),
+								E('label', { 'id': 'counter' }, [ '0 / 0 SMS' ])
 								])
 							]),
 						]),

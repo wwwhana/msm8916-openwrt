@@ -35,6 +35,8 @@ ADB_FFS=/dev/usb-ffs/adb
 ADB_READY=/var/run/usb-gadget-adb.udc
 ADB_SERVICE=/etc/init.d/adbd
 GADGET_LOCK=/var/run/usb-gadget.lock
+SERIAL_FILE=/etc/usb-gadget.serial
+MACHINE_ID_FILE=/etc/machine-id
 
 CFG_ACM_SHELL=""
 
@@ -100,11 +102,20 @@ error() {
 # ============================================================================
 
 get_serial_number() {
-    if [ -f /etc/machine-id ]; then
-        sha256sum < /etc/machine-id 2>/dev/null | cut -d' ' -f1 | cut -c1-16
-        return
+    local serial="$(cat "$SERIAL_FILE" 2>/dev/null || true)"
+    case "$serial" in
+        ''|*[!a-zA-Z0-9._-]*) ;;
+        *) [ "${#serial}" -gt 64 ] || { echo "$serial"; return; } ;;
+    esac
+    if [ -s "$MACHINE_ID_FILE" ]; then
+        serial="$(sha256sum < "$MACHINE_ID_FILE" | cut -c1-16)"
+    else
+        serial="$(head -c 32 /dev/urandom | sha256sum | cut -c1-16)"
     fi
-    echo "$(date +%s)-$(( $$ + 1000 ))"
+    # Rebuilding USB must not create another ADB device or Ethernet adapter.
+    (umask 077; echo "$serial" > "${SERIAL_FILE}.tmp") || return 1
+    mv -f "${SERIAL_FILE}.tmp" "$SERIAL_FILE" || return 1
+    echo "$serial"
 }
 
 generate_mac() {
@@ -222,7 +233,16 @@ restore_usb_network() {
 # Closing FunctionFS ep0 (a disconnect or daemon restart) unbinds configfs.
 # Restore this gadget only; fall back to its network/serial functions if ADB
 # is not ready. The watcher holds the same lock as normal start and stop.
+usb_adapter_mode() {
+    local role
+    for role in /sys/class/usb_role/*/role; do
+        [ -f "$role" ] && [ "$(cat "$role")" = host ] && return 0
+    done
+    return 1
+}
+
 rebind_adb() {
+    usb_adapter_mode && return 0
     load_config
     [ "$CFG_ENABLED" = 1 ] && [ "$CFG_ADB" = 1 ] && [ -s "$ADB_READY" ] || return 0
     [ -d "$CFG_GADGET_PATH" ] || return 0
@@ -398,6 +418,11 @@ setup_network() {
 # ============================================================================
 
 setup_gadget() {
+    # A host port cannot simultaneously expose the PC gadget.
+    if usb_adapter_mode; then
+        log "USB port reserved for an Ethernet adapter"
+        return 0
+    fi
     # Load configuration
     load_config
     
@@ -407,6 +432,9 @@ setup_gadget() {
         log "USB port available for host mode"
         return 0
     fi
+
+    local serial
+    serial="$(get_serial_number)" || error "Cannot save the USB device identity"
     
     log "Setting up USB gadget"
     log "Gadget name: $CFG_GADGET_NAME"
@@ -438,7 +466,7 @@ setup_gadget() {
     
     # Strings (USB descriptors)
     mkdir -p strings/0x409
-    sysfs_write strings/0x409/serialnumber "$(get_serial_number)"
+    sysfs_write strings/0x409/serialnumber "$serial"
     sysfs_write strings/0x409/manufacturer "$CFG_MANUFACTURER"
     sysfs_write strings/0x409/product "$CFG_PRODUCT"
     

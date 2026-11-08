@@ -1,117 +1,87 @@
 'use strict';
 'require view';
-'require fs';
 'require form';
-'require ui';
+'require uci';
 'require poll';
+'require uplink_model';
 
-var STATUS_FILE = '/tmp/uplink.json';
-
-function getStatus() {
-	return fs.read(STATUS_FILE).then(function (t) {
-		try { return JSON.parse(t); } catch (e) { return null; }
-	}).catch(function () { return null; });
+var labels = { modem: _('LTE'), sta: _('Wi-Fi'), ethernet: _('USB 유선랜'), none: _('연결 없음') };
+function statusTable(data) {
+    var link = data.uplink || {}, rows = [];
+    ['modem', 'sta', 'ethernet'].forEach(function(name) {
+        var state = link[name] || {};
+        var text = state.healthy == 1 ? _('연결됨') : state.present == 1 ? _('확인 중') : _('연결 안 됨');
+        if (name === 'ethernet' && data.usb) {
+            if (data.usb.role === 'off') text = _('사용 안 함');
+            else if (!(data.usb.adapters || []).length) text = _('어댑터 연결 대기');
+            else if (data.usb.role === 'lan') text = _('하위 장비에 공유');
+        }
+        rows.push(E('tr', { 'class': 'tr' }, [
+            E('td', { 'class': 'td' }, labels[name]),
+            E('td', { 'class': 'td' }, text),
+            E('td', { 'class': 'td' }, state.device || '—')
+        ]));
+    });
+    var nodes = [
+        E('p', {}, [_('사용 중인 인터넷 회선: '), labels[link.active] || _('확인 중')]),
+        E('table', { 'class': 'table' }, rows)
+    ];
+    if (data.usb && data.usb.error) nodes.push(E('p', { 'class': 'alert-message warning' },
+        _('USB 유선랜 설정을 적용하지 못했습니다. 어댑터와 USB 연결을 확인한 뒤 다시 적용하세요.')));
+    return E('div', {}, nodes);
 }
-
-function pill(on, text) {
-	return E('span', {
-		'style': 'display:inline-block;padding:2px 8px;border-radius:10px;color:#fff;font-size:90%;background:' +
-			(on ? '#4caf50' : '#b71c1c')
-	}, text);
-}
-
-function linkRow(name, l) {
-	var present = l && l.present == 1;
-	var healthy = l && l.healthy == 1;
-	var cells = [
-		E('td', { 'class': 'td left', 'width': '22%' }, name),
-		E('td', {}, present ? pill(healthy, healthy ? _('healthy') : _('present, probing')) : pill(false, _('down')))
-	];
-	if (l) {
-		cells.push(E('td', {}, l.device || '—'));
-		cells.push(E('td', {}, l.gateway || '—'));
-		cells.push(E('td', {}, l.dns || '—'));
-	}
-	return E('tr', {}, cells);
-}
-
-function statusTable(j) {
-	var rows = [
-		linkRow(_('Modem (LTE)'), j ? j.modem : null),
-		linkRow(_('Wi-Fi station'), j ? j.sta : null)
-	];
-	var a = j ? (j.active || 'none') : '?';
-	var c = a === 'sta' ? '#4caf50' : (a === 'modem' ? '#2196f3' : '#b71c1c');
-	return E('div', { 'class': 'cbi-section' }, [
-		E('h3', {}, [_('Active uplink: '), E('span', { 'style': 'color:' + c }, a)]),
-		E('table', { 'class': 'table' }, [
-			E('thead', {}, E('tr', {}, [
-				E('th', {}, _('Link')), E('th', {}, _('State')),
-				E('th', {}, _('Device')), E('th', {}, _('Gateway')), E('th', {}, _('DNS'))
-			])),
-			E('tbody', {}, rows)
-		])
-	]);
-}
-
 return view.extend({
-	load: function () {
-		return getStatus();
-	},
-
-	render: function (data) {
-		var m = new form.Map('uplink', _('Uplink policy'),
-			_('Choose which path to the internet is preferred and how a failed link is detected. ') +
-			_('With policy "Auto" the modem wins while it is healthy and the Wi-Fi station takes over ') +
-			_('when the modem has no route or fails its health probe. The station DNS defaults to 8.8.8.8 8.8.4.4.'));
-
-		var s = m.section(form.NamedSection, 'general', 'uplink');
-		s.anonymous = false;
-		s.addremove = false;
-
-		var policy = s.option(form.ListValue, 'policy', _('Policy'));
-		policy.value('auto', _('Auto (modem first, station fallback)'));
-		policy.value('modem', _('Modem only'));
-		policy.value('sta', _('Station preferred'));
-		policy.default = 'auto';
-
-		var sd = s.option(form.Value, 'sta_dns', _('Station DNS'),
-			_('DNS servers advertised on the station uplink (space separated). Leave empty to use the DHCP-provided DNS.'));
-		sd.datatype = 'string';
-		sd.placeholder = '8.8.8.8 8.8.4.4';
-
-		var pt = s.option(form.Value, 'probe_target', _('Probe target'));
-		pt.datatype = 'host'; pt.default = '1.1.1.1';
-		var pi = s.option(form.Value, 'probe_interval', _('Probe interval (s)'));
-		pi.datatype = 'uinteger'; pi.default = '30';
-		var pto = s.option(form.Value, 'probe_timeout', _('Probe timeout (s)'));
-		pto.datatype = 'uinteger'; pto.default = '3';
-		var ft = s.option(form.Value, 'fail_threshold', _('Failures to mark down'));
-		ft.datatype = 'uinteger'; ft.default = '3';
-		var rt = s.option(form.Value, 'recover_threshold', _('Successes to mark up'));
-		rt.datatype = 'uinteger'; rt.default = '2';
-
-		var status = E('div', { 'id': 'uplink-status' });
-		function paint(j) {
-			while (status.firstChild) status.removeChild(status.firstChild);
-			status.appendChild(statusTable(j));
-		}
-		paint(data);
-		poll.add(function () { return getStatus().then(paint); }, 5);
-
-		return m.render().then(function (node) {
-			return E('div', {}, [
-				E('h2', {}, _('Uplink')),
-				E('div', { 'class': 'cbi-map-descr' }, [
-					_('The dual-uplink manager selects the default route between the LTE modem and the ') +
-					_('Wi-Fi station, with health probes and a user policy.')
-				]),
-				status,
-				node
-			]);
-		});
-	},
-
-	/* Saving is handled by the default view implementation; the manager
-	 * re-reads /etc/config/uplink when procd signals a config change. */
+    load: function() {
+        return uci.load('uplink').then(function() { return uplink_model.status(); });
+    },
+    render: function(data) {
+        data = data || {};
+        var m = new form.Map('uplink', _('인터넷 연결'),
+            _('상위 회선은 LTE·Wi-Fi·USB 유선랜을 사용합니다. 하위 장비에는 Wi-Fi·블루투스·USB 유선랜으로 공유합니다.'));
+        var s = m.section(form.NamedSection, 'general', 'uplink');
+        s.addremove = false;
+        var policy = s.option(form.ListValue, 'policy', _('인터넷 회선 우선순위'));
+        policy.value('auto', _('LTE 우선 (유선랜·Wi-Fi 대체)'));
+        policy.value('modem', _('LTE만 사용'));
+        policy.value('sta', _('Wi-Fi 우선 (유선랜·LTE 대체)'));
+        if (data.usb) policy.value('ethernet', _('유선랜 우선 (LTE·Wi-Fi 대체)'));
+        policy.default = 'auto';
+        if (data.usb) {
+            var role = s.option(form.ListValue, 'usb_ethernet', _('USB 유선랜 용도'),
+                _('유선랜 어댑터는 OTG 연결이 필요합니다. 이 설정은 Wi-Fi로 관리 페이지에 연결한 상태에서 적용하세요.'));
+            role.value('off', _('사용 안 함 · PC 연결'));
+            role.value('wan', _('상위 인터넷 회선 (WAN)'));
+            role.value('lan', _('하위 장비에 공유 (LAN)'));
+            role.default = 'off';
+            var adapter = s.option(form.ListValue, 'usb_device', _('유선랜 어댑터'));
+            adapter.value('', _('자동 선택'));
+            var configured = data.usb.device || '', found = false;
+            (data.usb.adapters || []).forEach(function(a) {
+                adapter.value(a.device, a.device + ' · ' + a.driver);
+                if (a.device === configured) found = true;
+            });
+            if (configured && !found) adapter.value(configured, configured + ' · ' + _('연결 대기'));
+            adapter.depends('usb_ethernet', 'wan');
+            adapter.depends('usb_ethernet', 'lan');
+            adapter.rmempty = false;
+        }
+        var dns = s.option(form.Value, 'sta_dns', _('Wi-Fi 회선 DNS'), _('비우면 상위 공유기가 제공한 DNS를 사용합니다.'));
+        dns.datatype = 'list(ipaddr)';
+        var target = s.option(form.Value, 'probe_target', _('연결 확인 주소'));
+        target.datatype = 'host'; target.default = '1.1.1.1';
+        [['probe_interval', _('확인 주기 (초)'), '30'],
+            ['probe_timeout', _('응답 대기 (초)'), '3'],
+            ['fail_threshold', _('끊김으로 판단할 연속 실패 횟수'), '3']].forEach(function(spec) {
+            var o = s.option(form.Value, spec[0], spec[1]);
+            o.datatype = 'min(1)'; o.default = spec[2];
+        });
+        var status = E('div', {});
+        function paint(next) {
+            while (status.firstChild) status.removeChild(status.firstChild);
+            status.appendChild(statusTable(next));
+        }
+        paint(data);
+        poll.add(function() { return uplink_model.status().then(paint); }, 5);
+        return m.render().then(function(node) { return E('div', {}, [status, node]); });
+    }
 });

@@ -69,82 +69,6 @@ var pkg = {
 	}
 };
 
-let phonebookEditorDialog = baseclass.extend({
-	__init__: function(title, content) {
-		this.title   = title;
-		this.content = content || '';
-	},
-
-	render: function() {
-		let self = this;
-		ui.showModal(this.title, [
-			E('textarea', {
-				'id': 'smsmgr_phonebook_editor', 'class': 'cbi-input-textarea',
-				'style': 'width:100% !important; height:50vh; min-height:300px;',
-				'wrap': 'off', 'spellcheck': 'false'
-			}, this.content.trim()),
-
-			E('div', { 'style': 'display:flex; justify-content:space-between; align-items:center; margin-top:10px;' }, [
-				E('div', {}, [ E('button', { 'class': 'btn', 'click': ui.hideModal }, _('Close')) ]),
-				E('div', { 'style': 'display:flex; gap:10px; align-items:center;' }, [
-					(function() {
-						var comboBtn = new ui.ComboButton('_load_user', {
-							'_load_user': _('Load .user file'),
-							'_save_user': _('Save .user file')
-						}, {
-							'click': function(ev, name) {
-								if (name === '_load_user') {
-									let input = document.createElement('input');
-									input.type = 'file'; input.accept = '.user';
-									input.onchange = function(e) {
-										let file = e.target.files[0];
-										if (!file) return;
-										let reader = new FileReader();
-										reader.onload = function(event) {
-											let targetPath = '/etc/modem/sms_manager_phonebook.user';
-											fs.write(targetPath, event.target.result)
-												.then(function() {
-													popTimeout(null, E('p', {}, _('File uploaded and saved to') + ' ' + targetPath), 5000, 'info');
-													return fs.read(targetPath);
-												})
-												.then(function(c) {
-													let ta = document.getElementById('smsmgr_phonebook_editor');
-													if (ta) ta.value = c;
-												})
-												.catch(function(e) { ui.addNotification(null, E('p', {}, _('Unable to upload file') + ': ' + e.message), 'error'); });
-										};
-										reader.readAsText(file);
-									};
-									input.click();
-								} else if (name === '_save_user') {
-									let ta   = document.getElementById('smsmgr_phonebook_editor');
-									let blob = new Blob([ta ? ta.value : ''], { type: 'text/plain' });
-									let link = document.createElement('a');
-									link.download = 'sms_manager_phonebook_' + getDateTimeSuffix() + '.user';
-									link.href = URL.createObjectURL(blob);
-									link.click(); URL.revokeObjectURL(link.href);
-								}
-							},
-							'classes': { '_load_user': 'cbi-button cbi-button-action important', '_save_user': 'cbi-button cbi-button-neutral' }
-						});
-						return comboBtn.render();
-					})(),
-					E('button', {
-						'class': 'btn cbi-button-save',
-						'click': ui.createHandlerFn(this, function() {
-							let ta = document.getElementById('smsmgr_phonebook_editor');
-							fs.write('/etc/modem/sms_manager_phonebook.user', ta.value.trim().replace(/\r\n/g, '\n') + '\n')
-								.then(function() { popTimeout(null, E('p', {}, _('Phonebook saved successfully')), 5000, 'info'); ui.hideModal(); })
-								.catch(function(e) { ui.addNotification(null, E('p', {}, _('Unable to save the file') + ': ' + e.message), 'error'); });
-						})
-					}, _('Save'))
-				])
-			])
-		], 'cbi-modal');
-	},
-	show: function() { this.render(); }
-});
-
 function makeFileManagerDialog(cfg) {
 	return baseclass.extend({
 		__init__: function(title) {
@@ -465,7 +389,7 @@ return view.extend({
 
 	render: function(modems) {
 		let m, s, o;
-		m = new form.Map('sms_manager', _('Configuration SMS Manager'), _('Configuration panel for SMS Manager application.'));
+		m = new form.Map('sms_manager', '모뎀 문자 설정', '문자와 채팅 기능을 설정합니다.');
 		s = m.section(form.TypedSection, 'sms_manager', '', null);
 		s.anonymous = true;
 
@@ -473,6 +397,10 @@ return view.extend({
 
 		// TAB SMS
 		s.tab('smstab', _('SMS Settings'));
+
+		o = s.taboption('smstab', form.Flag, 'rcs_enabled', 'RCS 사용', '상대가 지원하면 채팅 메시지로 보냅니다. 그 외에는 문자로 보냅니다.');
+		o.default = '1'; o.rmempty = false;
+
 
 		o = s.taboption('smstab', form.ListValue, 'readport', _('SMS reading modem'),
 			_('Select one of the available modems from ModemManager.'));
@@ -604,11 +532,18 @@ return view.extend({
 		modems.forEach(function(modem) { o.value(modem.path, modem.displayName); });
 		o.placeholder = _('Please select a modem'); o.rmempty = false;
 
-		o = s.taboption('smstab', form.Value, 'pnumber', _('Phone number prefix'),
-			_('Country prefix for phone numbers (for Poland it is +48).'));
-		o.default = '+48';
+		o = s.taboption('smstab', form.Value, 'smsc', _('SMS centre (SMSC)'),
+			_('Leave empty to use the SIM and modem setting. A custom centre applies only to outgoing messages.'));
+		o.placeholder = _('Automatic'); o.rmempty = true;
 		o.validate = function(section_id, value) {
-			if (value.match(/^\+?[0-9]+$/)) return true;
+			return !value || /^\+?[0-9]{3,15}$/.test(value) || _('Please specify a valid phone number');
+		};
+
+		o = s.taboption('smstab', form.Value, 'pnumber', _('Phone number prefix'),
+			_('Country prefix detected from the SIM, for example +82 for Korea.'));
+		o.placeholder = _('Detected from SIM');
+		o.validate = function(section_id, value) {
+			if (!value || value.match(/^\+?[0-9]{1,4}$/)) return true;
 			return _('Expected format: +decimal value or decimal value');
 		};
 
@@ -620,15 +555,10 @@ return view.extend({
 			_("This option allows you to send one message to all contacts in the user's contact list."));
 		o.rmempty = false; o.default = false;
 
-		o = s.taboption('smstab', form.Button, '_phonebook_edit');
-		o.title = _('User contacts');
-		o.description = _("Each line must have the following format: 'Contact name;phone number'. For user convenience, the file is saved to the location <code>/etc/modem/sms_manager_phonebook.user</code>.");
-		o.inputtitle = _('Manage contacts');
-		o.onclick = function() {
-			return fs.trimmed('/etc/modem/sms_manager_phonebook.user')
-				.then(function(content) { new phonebookEditorDialog(_('Edit User Contacts'), content || '').show(); })
-				.catch(function() { new phonebookEditorDialog(_('Edit User Contacts'), '').show(); });
-		};
+		o = s.taboption('smstab', form.Button, '_contacts');
+		o.title = '연락처';
+		o.inputtitle = '연락처 관리';
+		o.onclick = function() { window.location.href = L.url('admin', 'messages') + '?tab=contacts'; };
 
 		// TAB E-MAIL
 		s.tab('email', _('SMS Forwarding to E-mail Settings'));

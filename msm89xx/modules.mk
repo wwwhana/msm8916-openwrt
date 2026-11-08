@@ -1,5 +1,28 @@
 # SPDX-License-Identifier: GPL-2.0-only
 
+# These inexpensive USB adapters have upstream drivers but no stock package.
+define KernelPackage/usb-net-ch9200
+  SUBMENU:=$(USB_MENU)
+  TITLE:=QinHeng CH9200 USB Ethernet support
+  DEPENDS:=@TARGET_msm89xx +kmod-usb-net
+  KCONFIG:=CONFIG_USB_NET_CH9200
+  FILES:=$(LINUX_DIR)/drivers/net/usb/ch9200.ko
+  AUTOLOAD:=$(call AutoProbe,ch9200)
+endef
+
+$(eval $(call KernelPackage,usb-net-ch9200))
+
+define KernelPackage/usb-net-sr9800
+  SUBMENU:=$(USB_MENU)
+  TITLE:=CoreChip SR9800 USB Ethernet support
+  DEPENDS:=@TARGET_msm89xx +kmod-usb-net
+  KCONFIG:=CONFIG_USB_NET_SR9800
+  FILES:=$(LINUX_DIR)/drivers/net/usb/sr9800.ko
+  AUTOLOAD:=$(call AutoProbe,sr9800)
+endef
+
+$(eval $(call KernelPackage,usb-net-sr9800))
+
 define KernelPackage/qcom-rproc
   SUBMENU:=$(OTHER_MENU)
   TITLE:=Qualcomm remoteproc support

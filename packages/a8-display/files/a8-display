@@ -2,6 +2,22 @@
 # SPDX-License-Identifier: GPL-2.0-only
 # The framebuffer console handles fonts, pixel format and scanline stride.
 # Use tty1 only; the serial console and its login remain available.
+SMS_CACHE=/var/run/a8-sms.json
+SMS_DB=/etc/modemconfig-ko/messages.sqlite3
+
+show_boot_splash() {
+	# Only the early boot instance owns the screen until the menu starts.
+	[ ! -e /var/run/a8-device.json ] || return 0
+	[ -r /usr/share/a8-display/boot.ppm ] || return 0
+	command -v fbsplash >/dev/null 2>&1 || return 0
+	[ "$(cat /sys/class/graphics/fb0/name 2>/dev/null)" = panel-mipi-dbid ] || return 0
+	[ "$(cat /sys/class/graphics/fb0/bits_per_pixel 2>/dev/null)" = 16 ] || return 0
+	[ "$(cat /sys/class/graphics/fb0/stride 2>/dev/null)" = 256 ] || return 0
+	[ "$(cat /sys/class/graphics/fb0/virtual_size 2>/dev/null)" = 128,128 ] || return 0
+	printf '\033[?25l\033[?7l\033[9;0]\033[37;40m\033[2J\033[7;1HOpenWrt\033[8;1HStarting...' > /dev/tty1 || return 0
+	fbsplash -d /dev/fb0 -s /usr/share/a8-display/boot.ppm || return 0
+	cut -d ' ' -f1 /proc/uptime > /var/run/a8-display.boot 2>/dev/null || :
+}
 
 read_value() {
 	[ -r "$1" ] && cat "$1" 2>/dev/null
@@ -11,22 +27,23 @@ battery_line() {
 	local cap volt status suffix
 	cap=$(read_value /sys/class/power_supply/pm8916-bms-vm/capacity)
 	volt=$(read_value /sys/class/power_supply/pm8916-bms-vm/voltage_now)
-	status=$(read_value /sys/class/power_supply/pm8916-lbc-chgr/status)
+	status=$(read_value /sys/class/power_supply/pm8916-bms-vm/status)
+	[ -n "$status" ] || status=$(read_value /sys/class/power_supply/pm8916-lbc-chgr/status)
 	[ "$status" = Charging ] && suffix=' CHG'
 	case "$cap" in
 		''|*[!0-9]*) ;;
-		*) if [ "$cap" -le 100 ]; then printf 'BAT %s%%%s' "$cap" "$suffix"; return; fi ;;
+		*) if [ "$cap" -le 100 ]; then printf 'BATT %03d%%%s' "$cap" "$suffix"; return; fi ;;
 	esac
 	case "$volt" in
-		''|*[!0-9]*) printf 'BAT --' ;;
-		*) awk -v v="$volt" -v s="$suffix" 'BEGIN {printf "BAT %.2fV%s",v/1000000,s}' ;;
+		''|*[!0-9]*) printf 'BATT --' ;;
+		*) awk -v v="$volt" -v s="$suffix" 'BEGIN {printf "BATT %.2fV%s",v/1000000,s}' ;;
 	esac
 }
 
 wifi_line() {
 	local data up
-	data=$(ubus -t 3 call network.wireless status 2>/dev/null) || { printf 'WIFI --'; return; }
-	up=$(printf '%s' "$data" | jsonfilter -e '@.*.up' 2>/dev/null)
+	data=$(read_value /var/run/a8-connections.json)
+	up=$(printf '%s' "$data" | jsonfilter -e '@.wifi' 2>/dev/null)
 	case "$up" in
 		*true*) printf 'WIFI ON' ;;
 		*false*) printf 'WIFI OFF' ;;
@@ -38,61 +55,115 @@ modem_line() {
 	local modem state
 	state=$(read_value /var/run/a8-apn.json | jsonfilter -e '@.state' 2>/dev/null)
 	case "$state" in
+        modem-unavailable) printf 'MODEM UNAVAIL'; return ;;
+        waiting-sim) printf 'SIM WAIT'; return ;;
 		no-sim) printf 'SIM NONE'; return ;;
 		sim-locked) printf 'SIM LOCKED'; return ;;
 	esac
 	modem=$(mmcli --timeout=3 -L 2>/dev/null | sed -n 's|.*/Modem/\([0-9][0-9]*\).*|\1|p' | head -n 1)
 	[ -n "$modem" ] || { printf 'MODEM --'; return; }
-	state=$(mmcli --timeout=3 -m "$modem" -K 2>/dev/null |
-		awk -F ': *' '/^[[:space:]]*modem.generic.state[[:space:]]*:/ {print toupper($2); exit}')
-	printf 'MODEM %s' "${state:---}"
+	mmcli --timeout=3 -m "$modem" -K 2>/dev/null | LC_ALL=C awk -F ': *' '
+		{
+			key=$1; gsub(/^[[:space:]]+|[[:space:]]+$/, "", key)
+			value=$0; sub(/^[^:]*:[[:space:]]*/, "", value)
+			sub(/[[:space:]]+$/, "", value)
+			if (key == "modem.generic.state") state=toupper(value)
+			if (key ~ /^modem[.]generic[.]access-technologies[.]value/) tech=tech " " tolower(value)
+			if (key == "modem.generic.signal-quality.value") quality=value
+			if (key == "modem.3gpp.operator-name") carrier=value
+			if (key == "modem.3gpp.operator-code") code=value
+		}
+		END {
+			if (state != "CONNECTED") {
+				printf "MODEM %s", (state == "" ? "--" : state)
+				exit
+			}
+			rat=tech ~ /lte/ ? "LTE" : tech ~ /umts|hspa|hsdpa|hsupa|evdo/ ? "3G" : tech ~ /gsm|gprs|edge/ ? "2G" : "NET"
+			sub(/^KOR /, "", carrier)
+			sub(/^LG Uplus$/, "LG U+", carrier)
+			if (carrier == "" || carrier == "--" || carrier ~ /[^ -~]/) carrier=code
+			if (carrier == "" || carrier == "--") carrier="--"
+			bars="-----"
+			if (quality ~ /^[0-9]+$/ && (quality+0) <= 100) {
+				quality+=0
+				count=int((quality+19)/20)
+				bars=""
+				for (i=1; i<=5; i++) bars=bars (i<=count ? "|" : "-")
+			}
+			# Battery and signal share the rightmost five columns.
+			printf "%-4s %-5s %s", rat, substr(carrier, 1, 5), bars
+		}'
 }
 
-apn_line() {
-	local data state mode
-	data=$(read_value /var/run/a8-apn.json)
-	[ -n "$data" ] || { printf 'APN --'; return; }
-	state=$(printf '%s' "$data" | jsonfilter -e '@.state' 2>/dev/null)
-	mode=$(printf '%s' "$data" | jsonfilter -e '@.mode' 2>/dev/null)
-	case "$state" in
-		disabled) printf 'APN MANUAL' ;;
-		pending-changes) printf 'APN EDITING' ;;
-		no-match|profile-not-found|invalid-*) printf 'APN NEED SETUP' ;;
-		commit-failed|restart-failed|wrong-interface) printf 'APN ERROR' ;;
-		*) case "$mode" in
-			auto) printf 'APN AUTO' ;;
-			profile) printf 'APN PROFILE' ;;
-			*) printf 'APN --' ;;
-		esac ;;
-	esac
+cache_sms() {
+	printf '{"available":%s,"total":%s,"new":%s}\n' "$1" "${2:-0}" "${3:-0}" > "$SMS_CACHE.new" &&
+		mv "$SMS_CACHE.new" "$SMS_CACHE"
+}
+
+sms_line() {
+	local messages counts total seen new
+	# IMS messages live in SQLite, outside ModemManager's modem inbox.
+	if [ -e "$SMS_DB" ]; then
+		counts=$(sqlite3 -readonly -batch -noheader -separator '|' -cmd '.timeout 1000' "$SMS_DB" \
+			"SELECT count(*),coalesce(sum(direction='incoming' AND local_read_at IS NULL),0) FROM messages;" 2>/dev/null) || counts=''
+		IFS='|' read -r total new <<EOF
+$counts
+EOF
+		case "$total:$new" in
+			*[!0-9:]*|:*|*:) cache_sms false; printf 'SMS --'; return ;;
+		esac
+	else
+		# Older installations still use SMS Manager's acknowledged modem count.
+		messages=$(mmcli --timeout=3 -m qcom-soc --messaging-list-sms 2>/dev/null) || {
+			cache_sms false
+			printf 'SMS --'; return
+		}
+		total=$(printf '%s\n' "$messages" | grep -c '/SMS/' || :)
+		seen=$(uci -q get 'sms_manager.@sms_manager[0].sms_count')
+		case "$seen" in ''|*[!0-9]*) seen=0 ;; esac
+		new=$(awk -v total="$total" -v seen="$seen" 'BEGIN {printf "%d",(total>seen+0 ? total-seen : 0)}')
+	fi
+	cache_sms true "$total" "$new"
+	[ "$new" -eq 0 ] || printf 'SMS NEW %s' "$new"
+}
+
+station_line() {
+	if [ "$(uci -q get wifista.main.enabled)" = 1 ]; then printf 'STATION ON'
+	else printf 'STATION OFF'; fi
 }
 
 show_status() {
-	local battery wifi modem address uptime apn
+	local battery wifi modem sms address uptime station
 	battery=$(battery_line)
 	wifi=$(wifi_line)
 	modem=$(modem_line)
+	sms=$(sms_line)
 	address=$(ubus -t 3 call network.interface.lan status 2>/dev/null |
 		jsonfilter -e '@["ipv4-address"][0].address' 2>/dev/null)
-	uptime=$(awk '{printf "UP %dh %02dm",$1/3600,($1%3600)/60}' /proc/uptime)
-	apn=$(apn_line)
+	uptime=$(awk '{printf "UPTIME %02dh%02dm",$1/3600,($1%3600)/60}' /proc/uptime)
+	# Keep the full IPv4 address if a non-default subnet needs all 16 cells.
+	[ "${#address}" -gt 11 ] || address="IP   ${address:---}"
+	station=$(station_line)
 	# Exactly eight rows, no trailing newline: no scrolling on 128x128/8x16.
 	printf '\033[H%-16.16s\r\n%-16.16s\r\n%-16.16s\r\n%-16.16s\r\n%-16.16s\r\n%-16.16s\r\n%-16.16s\r\n%-16.16s' \
-		'OpenWrt A8' '' "$battery" "$wifi" "$modem" "${address:---}" "$uptime" "$apn"
+		'OpenWrt' "$sms" "$battery" "$modem" "$wifi" "${address:---}" "$uptime" "$station"
 }
 
 main() {
 	tr '\000' '\n' < /proc/device-tree/compatible | grep -qx 'mifib-v18,generic' || exit 0
+	if [ "$1" = --boot ] && [ -c /dev/tty1 ]; then printf '\033[?25l' > /dev/tty1; fi
 	# Modules may finish probing after procd starts this service.
-	while [ ! -e /sys/class/graphics/fb0/name ] || [ ! -c /dev/tty1 ]; do sleep 2; done
+	while [ ! -e /sys/class/graphics/fb0/name ] || [ ! -c /dev/tty1 ]; do sleep 1; done
+	[ "$1" != --boot ] || show_boot_splash
 	umask 077
 	# The power-key service runs the menu independently of slow modem queries.
-	trap 'rm -f /var/run/a8-display.status.new; exit' TERM INT
+	trap 'rm -f /var/run/a8-display.status.new "$SMS_CACHE.new"; exit' TERM INT
 	while :; do
+		lua -e 'require("a8_display.connections").update_cache()' >/dev/null 2>&1
 		show_status > /var/run/a8-display.status.new
 		mv /var/run/a8-display.status.new /var/run/a8-display.status
 		sleep 5
 	done
 }
 
-if [ "$1" != --source-only ]; then main; fi
+if [ "$1" != --source-only ]; then main "$@"; fi

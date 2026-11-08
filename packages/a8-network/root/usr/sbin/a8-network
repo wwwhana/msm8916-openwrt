@@ -1,0 +1,16 @@
+#!/usr/bin/lua
+-- SPDX-License-Identifier: GPL-2.0-only
+local nixio=require('nixio')
+local json=require('luci.jsonc')
+local service=require('a8_network')
+local fs=require('nixio.fs')
+if arg[1]=='status' then print(json.stringify(service.status())); os.exit(0) end
+if arg[1]~='refresh' then os.exit(1) end
+local lock=nixio.open('/var/lock/a8-network.lock','w','600')
+if not lock or not lock:lock('lock') then os.exit(1) end
+local ran,ok,reason=pcall(service.refresh)
+if not ran then ok=false; reason='network-failed' end
+fs.writefile('/var/run/a8-network.json.new',json.stringify({error=not ok and reason or nil}))
+os.rename('/var/run/a8-network.json.new','/var/run/a8-network.json')
+lock:close()
+if not ok then io.stderr:write((reason or 'network-failed') .. '\n'); os.exit(1) end

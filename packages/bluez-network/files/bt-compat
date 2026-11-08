@@ -1,0 +1,96 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+config=/etc/bluetooth/main.conf
+runtime=/var/run/bluetooth-compat.conf
+board=$(cut -d, -f1 /tmp/sysinfo/board_name 2>/dev/null)
+
+setting() {
+	value=$(uci -q get bt-nap.main.pairing_compat)
+	case "$value" in ''|0) echo 0 ;; 1) echo 1 ;; *) return 1 ;; esac
+}
+
+# BlueZ reads this at every start; the original configuration stays intact.
+if [ "$1" = config ]; then
+	if [ "$board" != mifib-v18 ] || [ "$(setting)" != 1 ]; then
+		rm -f "$runtime"
+		echo "$config"
+		exit 0
+	fi
+	awk '
+		/^[ \t]*\[/ {
+			general=($0 ~ /^[ \t]*\[General\][ \t]*$/)
+			if (general && !written) {
+				print; print "SecureConnections = off"; written=1; next
+			}
+		}
+		general && /^[ \t]*#?[ \t]*SecureConnections[ \t]*=/ { next }
+		{ print }
+		END { if (!written) print "\n[General]\nSecureConnections = off" }
+	' "$config" > "$runtime.new" || exit 1
+	chmod 600 "$runtime.new" && mv "$runtime.new" "$runtime" || exit 1
+	echo "$runtime"
+	exit 0
+fi
+
+[ "$board" = mifib-v18 ] || { echo 'Pairing compatibility is unavailable on this board' >&2; exit 1; }
+case "$1" in
+status) setting; exit $? ;;
+on) want=1 ;;
+off) want=0 ;;
+*) echo 'usage: bt-compat {on|off|status|config}' >&2; exit 1 ;;
+esac
+
+[ -z "$(uci -q changes bt-nap)" ] || { echo 'Apply pending Bluetooth edits first' >&2; exit 1; }
+[ "$(uci -q get bt-nap.main)" = sharing ] || exit 1
+old=$(setting) || exit 1
+power=$(timeout 3 bluetoothctl show | sed -n 's/.*Powered:[[:space:]]*//p' | head -1)
+case "$power" in yes) power=on ;; no) power=off ;; *) echo 'Bluetooth controller unavailable' >&2; exit 1 ;; esac
+mkdir /var/run/bt-compat.lock 2>/dev/null || { echo 'Bluetooth change in progress' >&2; exit 1; }
+trap 'rmdir /var/run/bt-compat.lock' EXIT
+trap 'exit 1' INT TERM
+
+restart_bluetooth() {
+	# BlueZ 5.83 leaves SC enabled if it was already on when the daemon starts.
+	sc=on; [ "$(setting)" != 1 ] || sc=off
+	output=$({ printf 'menu mgmt\n'; sleep 1; printf 'power off\n'; sleep 2;
+		printf 'sc %s\n' "$sc"; sleep 1; printf 'info\n'; sleep 1; printf 'quit\n';
+	} | bluetoothctl --timeout 9 2>/dev/null) || return 1
+	settings=$(printf '%s\n' "$output" | sed -n 's/.*current settings: //p' | tail -1)
+	case " $settings " in *' powered '*) return 1 ;; esac
+	case " $settings " in *' ssp '*) : ;; *) return 1 ;; esac
+	case " $settings " in
+		*' secure-conn '*) [ "$sc" = on ] || return 1 ;;
+		*) [ "$sc" = off ] || return 1 ;;
+	esac
+	/etc/init.d/bluetoothd restart || return 1
+	i=0
+	while [ "$i" -lt 5 ]; do
+		timeout 2 bluetoothctl show 2>/dev/null | grep -q 'Powered:' && break
+		sleep 1; i=$((i+1))
+	done
+	[ "$i" -lt 5 ] || return 1
+	timeout 6 bluetoothctl power "$power" >/dev/null 2>&1 || return 1
+	actual=$(timeout 3 bluetoothctl show | sed -n 's/.*Powered:[[:space:]]*//p' | head -1)
+	[ "$actual" = "$( [ "$power" = on ] && echo yes || echo no )" ] || return 1
+	if [ "$power" = on ]; then
+		mode=$(timeout 4 hcitool cmd 0x03 0x0079 2>/dev/null | awk '/^[ \t]*01 79 0C 00 / { print $5 }')
+		expected=01; [ "$(setting)" != 1 ] || expected=00
+		[ "$mode" = "$expected" ] || return 1
+	fi
+	[ ! -x /etc/init.d/bt-pairing ] || /etc/init.d/bt-pairing restart || return 1
+	/etc/init.d/bt-nap restart || return 1
+}
+
+if uci set "bt-nap.main.pairing_compat=$want" && uci commit bt-nap; then
+	if restart_bluetooth; then
+		echo "Pairing compatibility $( [ "$want" = 1 ] && echo on || echo off )"
+		exit 0
+	fi
+fi
+uci -q revert bt-nap.main.pairing_compat
+if uci set "bt-nap.main.pairing_compat=$old" && uci commit bt-nap && restart_bluetooth; then
+	echo 'Bluetooth change failed; previous setting restored' >&2
+else
+	echo 'Bluetooth change failed; check the controller before retrying' >&2
+fi
+exit 1

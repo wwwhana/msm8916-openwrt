@@ -97,7 +97,7 @@ p, reason = model.apply(cursor, 'modem', lgu, auto)
 assert(p == nil and reason == 'commit-failed')
 
 -- Staged settings must not reach modem queries, configuration writes or ifup.
-local pending_config, lock
+local pending_config, lock, modem_response, missing_sim_path, failed_reason
 local reported_modes={'allowed: 3g; preferred: none', 'allowed: 4g; preferred: none',
     'allowed: 3g, 4g; preferred: 4g', 'allowed: 4g, 3g; preferred: 3g'}
 local settings = {mode='auto',interface='modem'}
@@ -122,7 +122,8 @@ package.preload.uci=function() return {cursor=function()
 end} end
 package.preload['luci.jsonc']=function() return {parse=function(value)
     if value == 'modem' then return {modem={generic={
-        sim='/org/freedesktop/ModemManager1/SIM/0', state='registered', ['unlock-required']=lock,
+        sim=not missing_sim_path and '/org/freedesktop/ModemManager1/SIM/0' or '--',
+        state='registered', ['state-failed-reason']=failed_reason, ['unlock-required']=lock,
         ['supported-modes']=reported_modes, ['current-modes']='allowed: 3g, 4g; preferred: 4g'}}} end
     if value == 'sim' then return {sim={properties={['operator-code']='45006'}}} end
     return {}
@@ -141,13 +142,20 @@ pending_config=nil
 settings={enabled='1', mode='profile', interface='modem', profile='travel'}
 io.popen=function(command)
     local response
-    if command:find('--modem=qcom-soc', 1, true) then response='modem'
+    if command:find('--modem=qcom-soc', 1, true) then response=modem_response or 'modem'
     else
         assert(command:find('--sim=/org/freedesktop/ModemManager1/SIM/0', 1, true))
         response='sim'
     end
     return {read=function() return response end, close=function() end}
 end
+modem_response='unavailable'
+assert(service.inspect().state == 'modem-unavailable')
+modem_response=nil; missing_sim_path=true
+assert(service.inspect().state == 'waiting-sim')
+failed_reason='sim-missing'
+assert(service.inspect().state == 'no-sim')
+missing_sim_path=false; failed_reason=nil
 for _, value in ipairs({false, 'none', 'unknown', 'sim-pin2', 'sim-puk2'}) do
     lock=value or nil
     assert(service.inspect().state == 'ready')

@@ -7,13 +7,13 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-sms-manager
-LUCI_TITLE:=SMS Support in LuCI JS via ModemManager
+LUCI_TITLE:=Conversations and contacts with ModemConfig-KO
 PKG_MAINTAINER:=Rafał Wabik <4Rafal@gmail.com>
 LUCI_DESCRIPTION:=LuCI JS interface for the SMS via ModemManager. The user interface supports SMS / USSD Codes / AT Commands.
 LUCI_PKGARCH:=all
-LUCI_DEPENDS:=+modemmanager +luci-proto-modemmanager +jsonfilter
+LUCI_DEPENDS:=+modemmanager +luci-proto-modemmanager +jsonfilter +sqlite3-cli +lua +luci-lib-nixio +luci-lib-jsonc
 PKG_VERSION:=1.1.4
-PKG_RELEASE:=20261106
+PKG_RELEASE:=2026110802
 
 define Package/luci-app-sms-manager/conffiles
 /etc/config/sms_manager

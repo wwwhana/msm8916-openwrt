@@ -1,0 +1,25 @@
+#!/bin/busybox sh
+# LCD is fitted only on this variant. Run detached from the rescue services.
+tr '\000' '\n' </proc/device-tree/compatible 2>/dev/null |
+    grep -qx 'mifib-v18,generic' || exit 0
+
+for m in gpio_backlight drm_panel_orientation_quirks drm drm_kms_helper \
+         drm_dma_helper drm_mipi_dbi panel-mipi-dbi; do
+    for f in /lib/modules/*/"$m".ko; do
+        [ -f "$f" ] && insmod "$f" 2>>/tmp/display.err
+    done
+done
+
+n=0
+while [ "$n" -lt 10 ]; do
+    mdev -s 2>/dev/null
+    [ -c /dev/fb0 ] && [ -c /dev/tty1 ] && break
+    n=$((n+1)); sleep 1
+done
+[ -c /dev/fb0 ] && [ -c /dev/tty1 ] || exit 0
+
+# Six image rows and two text rows at VGA8x16. Do not write a trailing newline:
+# it would scroll the last line and overwrite Tux on this 128x128 display.
+chvt 1 2>/dev/null
+printf '\033[?25l\033[9;0]\033[2J\033[7;1HRecovery\033[8;1H192.168.10.1' >/dev/tty1
+fbsplash -d /dev/fb0 -s /etc/recovery.ppm 2>>/tmp/display.err

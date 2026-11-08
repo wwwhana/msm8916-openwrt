@@ -59,7 +59,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
 REPO_DIR="$SCRIPT_DIR"
 RECOVERY_DIR="$REPO_DIR/msm89xx/recovery"
-IRFS="$RECOVERY_DIR/irfs"
+IRFS_SOURCE="$RECOVERY_DIR/irfs"
+IRFS="$IRFS_SOURCE"
+STAGE=""
+trap '[ -z "$STAGE" ] || rm -rf "$STAGE"' EXIT
 
 BLUE="\033[1;34m"
 GREEN="\033[1;32m"
@@ -79,6 +82,7 @@ RECOVERY_CMDLINE="earlycon console=ttyMSM0,115200 panic=5"
 # Modules the initramfs has to carry, in insmod order.  Must match the list in
 # msm89xx/recovery/irfs/init.
 RECOVERY_MODULES="mdt_loader qcom_common qcom_pil_info qcom_wcnss_pil compat cfg80211 mac80211 wcn36xx"
+RECOVERY_LCD_MODULES="drm_panel_orientation_quirks drm drm_kms_helper drm_dma_helper drm_mipi_dbi panel-mipi-dbi"
 
 # Board list - derived from the device definitions, stays in sync automatically.
 list_boards() {
@@ -186,33 +190,48 @@ install_blobs() {
     [ -d "$src" ] || die "No WiFi blobs for '$b'. Run:
        ./msm89xx/recovery/fetch-device-blobs.sh $b root@<device>"
     msg "Installing '$b' blobs (WCNSS firmware, hostapd, libs) into the initramfs"
-    rm -rf "$RECOVERY_DIR/irfs/lib/firmware"
-    find "$RECOVERY_DIR/irfs/lib" -maxdepth 1 -name 'lib*.so*' \
+    rm -rf "$IRFS/lib/firmware"
+    find "$IRFS/lib" -maxdepth 1 -name 'lib*.so*' \
         ! -name 'libc.so*' ! -name 'libgcc_s.so*' -delete
-    cp -a "$src/." "$RECOVERY_DIR/irfs/"
+    cp -a "$src/." "$IRFS/"
     # A blobs directory fetched before the station mode was removed still
     # carries the wpa_supplicant symlink; drop it so a stale tree cannot put it
     # back into the image.
-    rm -f "$RECOVERY_DIR/irfs/usr/sbin/wpa_supplicant"
+    rm -f "$IRFS/usr/sbin/wpa_supplicant"
 }
 
 # Copy the wireless + WCNSS modules out of the production root into the
 # initramfs.  They are built by the normal kernel build, so this fails loudly
 # rather than shipping an image whose AP silently cannot exist.
 install_modules() {
-    local src ver m
+    local src ver m modules="$RECOVERY_MODULES"
     src="$(module_dir)" || die "No kernel modules found under openwrt/build_dir/*/root-msm89xx/lib/modules.
        The recovery image reuses the production kernel, so its modules must
        exist first: ./build.sh kernel <board>"
     ver="$(module_version "$src")"
     [ -n "$ver" ] || die "cannot read the kernel version from $src/wcn36xx.ko"
     msg "Installing kernel modules ($ver) into the initramfs"
-    rm -rf "$RECOVERY_DIR/irfs/lib/modules"
-    mkdir -p "$RECOVERY_DIR/irfs/lib/modules/$ver"
-    for m in $RECOVERY_MODULES; do
+    if [ "$1" = mifib-v18 ]; then
+        modules="$modules $RECOVERY_LCD_MODULES"
+        # Some kernels build this small backlight driver in; others ship a module.
+        [ ! -f "$src/gpio_backlight.ko" ] || modules="$modules gpio_backlight"
+    fi
+    rm -rf "$IRFS/lib/modules"
+    mkdir -p "$IRFS/lib/modules/$ver"
+    for m in $modules; do
         [ -f "$src/$m.ko" ] || die "module $m.ko is missing from $src"
-        cp "$src/$m.ko" "$RECOVERY_DIR/irfs/lib/modules/$ver/$m.ko"
+        cp "$src/$m.ko" "$IRFS/lib/modules/$ver/$m.ko"
     done
+}
+
+install_display() {
+    [ "$1" = mifib-v18 ] || return 0
+    python3 "$REPO_DIR/packages/a8-display/gen-panel.py" \
+        "$REPO_DIR/packages/a8-display/files/stock-init.hex" \
+        "$IRFS/lib/firmware/mifib-v18,gc9107.bin"
+    python3 "$RECOVERY_DIR/gen-splash.py" \
+        "$REPO_DIR/msm89xx/image/lk2nd-a8/tux.h" "$IRFS/etc/recovery.ppm"
+    chmod 755 "$IRFS/usr/sbin/recovery-display"
 }
 
 # Pack: initramfs -> gzip -> ANDROID! header of the production boot image.
@@ -221,9 +240,10 @@ install_modules() {
 # ramdisk as separate files; here the kernel is lifted straight out of the
 # production image, which is the only copy guaranteed to match the shipped DTB.
 pack_image() {
-    local b="$1" prod="$2" out="$RECOVERY_DIR/$b.img"
+    local b="$1" prod="$2" out="$RECOVERY_DIR/$b.img" cmdline="$RECOVERY_CMDLINE"
+    [ "$b" != mifib-v18 ] || cmdline="$cmdline fbcon=font:VGA8x16"
     msg "Packing $b: production kernel + recovery initramfs"
-    python3 - "$prod" "$IRFS" "$out" "$RECOVERY_CMDLINE" <<'PY'
+    python3 - "$prod" "$IRFS" "$out" "$cmdline" <<'PY'
 import gzip, struct, subprocess, sys
 
 prod, irfs, out, cmdline = sys.argv[1:5]
@@ -311,9 +331,19 @@ for b in $BOARDS; do
         continue
     fi
 
+    # A temporary packing tree is necessary for per-board blobs. Never replace
+    # tracked initramfs files or leave one board's private calibration in them.
+    STAGE="$(mktemp -d)"
+    IRFS="$STAGE/irfs"
+    mkdir -p "$IRFS"
+    cp -a "$IRFS_SOURCE/." "$IRFS/"
     install_blobs "$b"
     install_modules "$b"
+    install_display "$b"
     pack_image "$b" "$prod"
     ok "Recovery image ready: msm89xx/recovery/$b.img"
     sha256sum "$RECOVERY_DIR/$b.img"
+    rm -rf "$STAGE"
+    STAGE=""
+    IRFS="$IRFS_SOURCE"
 done

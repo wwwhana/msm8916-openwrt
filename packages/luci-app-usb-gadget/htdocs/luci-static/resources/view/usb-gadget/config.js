@@ -121,6 +121,14 @@ return view.extend({
         };
 
         // =================================================================
+        // ADB
+        // =================================================================
+        s = m.section(form.NamedSection, 'adb', 'function',
+            _('ADB'), _('USB debugging and file transfer.'));
+        o = s.option(form.Flag, 'enabled', _('Enable ADB'));
+        o.rmempty = false;
+
+        // =================================================================
         // Mass Storage
         // =================================================================
         s = m.section(form.NamedSection, 'ums', 'function', 

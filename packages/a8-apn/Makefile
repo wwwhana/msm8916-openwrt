@@ -2,7 +2,7 @@
 include $(TOPDIR)/rules.mk
 PKG_NAME:=a8-apn
 PKG_VERSION:=1.0
-PKG_RELEASE:=3
+PKG_RELEASE:=11
 PKG_LICENSE:=GPL-2.0-only LicenseRef-Public-Domain
 PKG_LICENSE_FILES:=COPYING
 include $(INCLUDE_DIR)/package.mk
@@ -37,7 +37,7 @@ define Package/a8-apn/install
 	$(INSTALL_DIR) $(1)/usr/share/a8-apn $(1)/usr/lib/lua/a8_apn $(1)/usr/sbin
 	$(CP) $(PKG_BUILD_DIR)/apn-db/. $(1)/usr/share/a8-apn/
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/COPYING $(1)/usr/share/a8-apn/COPYING.providers
-	$(INSTALL_DATA) ./files/model.lua ./files/service.lua $(1)/usr/lib/lua/a8_apn/
+	$(INSTALL_DATA) ./files/model.lua ./files/service.lua ./files/ims.lua ./files/qmi.lua $(1)/usr/lib/lua/a8_apn/
 	$(INSTALL_BIN) ./files/a8-apn $(1)/usr/sbin/a8-apn
 	$(INSTALL_DIR) $(1)/etc/config $(1)/etc/uci-defaults
 	$(INSTALL_CONF) ./files/a8_apn.config $(1)/etc/config/a8_apn
@@ -49,5 +49,7 @@ define Package/a8-apn/install
 	$(INSTALL_DATA) ./files/a8-apn.menu.json $(1)/usr/share/luci/menu.d/a8-apn.json
 	$(INSTALL_DIR) $(1)/www/luci-static/resources/view
 	$(INSTALL_DATA) ./files/a8-apn.js $(1)/www/luci-static/resources/view/a8-apn.js
+	$(INSTALL_DIR) $(1)/www/luci-static/resources
+	$(INSTALL_DATA) ./files/a8-ims.js $(1)/www/luci-static/resources/a8-ims.js
 endef
 $(eval $(call BuildPackage,a8-apn))

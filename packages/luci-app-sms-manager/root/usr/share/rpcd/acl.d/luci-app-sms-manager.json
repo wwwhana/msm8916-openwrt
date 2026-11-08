@@ -1,81 +1,248 @@
 {
-	"luci-app-sms-manager": {
-		"description": "Grant access to LuCI app SMS Manager",
-		"read": {
-			"cgi-io": [ "exec", "upload" ],
-			"file": {
-				"/sys/class/leds": [ "list" ],
-				"/etc/crontabs/root": [ "read" ],
-				"/etc/init.d/sms_manager start": [ "exec" ],
-				"/etc/init.d/sms_manager stop": [ "exec" ],
-				"/etc/init.d/sms_manager enable": [ "exec" ],
-				"/etc/init.d/sms_manager disable": [ "exec" ],
-				"/etc/init.d/sms_manager restart": [ "exec" ],
-				"/etc/init.d/led restart": [ "exec" ],
-				"/sbin/sms_manager_led.sh": [ "exec" ],
-				"/sbin/sms_m_led.sh": [ "exec" ],
-				"/usr/bin/mmcli": [ "exec" ],
-				"/usr/bin/qmicli": [ "exec" ],
-				"/usr/sbin/sms_manager_autoconfig": [ "exec" ],
-				"/usr/sbin/sms_manager_autoconfig --force --report": [ "exec" ],
-				"/usr/bin/opkg list-installed": [ "exec" ],
-				"/usr/libexec/package-manager-call list-installed": [ "exec" ],
-				"/usr/libexec/opkg-list installed": [ "exec" ],
-				"/usr/libexec/opkg-call list-installed": [ "exec" ],
-				"/bin/sh": [ "exec" ],
-				"/bin/tar": [ "exec" ],
-				"/bin/chmod": [ "exec" ],
-				"/bin/rm": [ "exec" ],
-				"/etc/sms_manager": [ "read" ],
-				"/tmp/mysms_manager.txt": [ "read" ],
-				"/tmp/smsmgr_ussdcodes.tar.gz": [ "read" ],
-				"/tmp/smsmgr_ussdcodes_upload.tar.gz": [ "read" ],
-				"/tmp/smsmgr_atcmmds.tar.gz": [ "read" ],
-				"/tmp/smsmgr_atcmmds_upload.tar.gz": [ "read" ],
-				"/etc/modem/sms_manager_phonebook.user": [ "read" ],
-				"/etc/modem/sms_manager_atcmmds.user": [ "read" ],
-				"/etc/modem/sms_manager_atcmmds": [ "list" ],
-				"/etc/modem/sms_manager_atcmmds/*": [ "read" ],
-				"/etc/modem/sms_manager_atcmmds/*.user": [ "read" ],
-				"/etc/modem/sms_manager_ussdcodes.user": [ "read" ],
-				"/etc/modem/sms_manager_ussdcodes": [ "list" ],
-				"/etc/modem/sms_manager_ussdcodes/*": [ "read" ],
-				"/etc/modem/sms_manager_ussdcodes/*.user": [ "read" ]
-			},
-			"uci": [ "sms_manager", "luci-app-sms-manager" ],
-			"ubus": {
-				"file": [ "read" ],
-				"sms_manager_sms_forward": [ "forward" ]
-			}
-		},
-		"write": {
-			"cgi-io": [ "upload" ],
-			"file": {
-				"/etc/sms_manager": [ "write" ],
-				"/etc/crontabs/root": [ "write" ],
-				"/etc/init.d/cron restart": [ "exec" ],
-				"/bin/chmod": [ "exec" ],
-				"/bin/rm": [ "exec" ],
-				"/bin/tar": [ "exec" ],
-				"/bin/sh": [ "exec" ],
-				"/sys/class/leds/*/brightness": [ "write" ],
-				"/tmp/mysms_manager.txt": [ "write" ],
-				"/tmp/smsmgr_ussdcodes.tar.gz": [ "write" ],
-				"/tmp/smsmgr_ussdcodes_upload.tar.gz": [ "write" ],
-				"/tmp/smsmgr_atcmmds.tar.gz": [ "write" ],
-				"/tmp/smsmgr_atcmmds_upload.tar.gz": [ "write" ],
-				"/etc/modem/sms_manager_phonebook.user": [ "write" ],
-				"/etc/modem/sms_manager_atcmmds.user": [ "write" ],
-				"/etc/modem/sms_manager_atcmmds/*.user": [ "write" ],
-				"/etc/modem/sms_manager_atcmmds/*": [ "write" ],
-				"/etc/modem/sms_manager_ussdcodes.user": [ "write" ],
-				"/etc/modem/sms_manager_ussdcodes/*.user": [ "write" ],
-				"/etc/modem/sms_manager_ussdcodes/*": [ "write" ]
-			},
-			"ubus": {
-				"file": [ "read", "write", "remove" ]
-			},
-			"uci": [ "sms_manager", "luci-app-sms-manager" ]
-		}
-	}
+  "luci-app-sms-manager": {
+    "description": "Grant access to LuCI app SMS Manager",
+    "read": {
+      "cgi-io": [
+        "exec",
+        "upload"
+      ],
+      "file": {
+        "/sys/class/leds": [
+          "list"
+        ],
+        "/etc/crontabs/root": [
+          "read"
+        ],
+        "/etc/init.d/sms_manager start": [
+          "exec"
+        ],
+        "/etc/init.d/sms_manager stop": [
+          "exec"
+        ],
+        "/etc/init.d/sms_manager enable": [
+          "exec"
+        ],
+        "/etc/init.d/sms_manager disable": [
+          "exec"
+        ],
+        "/etc/init.d/sms_manager restart": [
+          "exec"
+        ],
+        "/etc/init.d/led restart": [
+          "exec"
+        ],
+        "/sbin/sms_manager_led.sh": [
+          "exec"
+        ],
+        "/sbin/sms_m_led.sh": [
+          "exec"
+        ],
+        "/usr/bin/mmcli": [
+          "exec"
+        ],
+        "/usr/bin/qmicli": [
+          "exec"
+        ],
+        "/usr/sbin/sms_manager_autoconfig": [
+          "exec"
+        ],
+        "/usr/sbin/sms_manager_autoconfig --force --report": [
+          "exec"
+        ],
+        "/usr/bin/opkg list-installed": [
+          "exec"
+        ],
+        "/usr/libexec/package-manager-call list-installed": [
+          "exec"
+        ],
+        "/usr/libexec/opkg-list installed": [
+          "exec"
+        ],
+        "/usr/libexec/opkg-call list-installed": [
+          "exec"
+        ],
+        "/bin/sh": [
+          "exec"
+        ],
+        "/bin/tar": [
+          "exec"
+        ],
+        "/bin/chmod": [
+          "exec"
+        ],
+        "/bin/rm": [
+          "exec"
+        ],
+        "/etc/sms_manager": [
+          "read"
+        ],
+        "/tmp/mysms_manager.txt": [
+          "read"
+        ],
+        "/tmp/smsmgr_ussdcodes.tar.gz": [
+          "read"
+        ],
+        "/tmp/smsmgr_ussdcodes_upload.tar.gz": [
+          "read"
+        ],
+        "/tmp/smsmgr_atcmmds.tar.gz": [
+          "read"
+        ],
+        "/tmp/smsmgr_atcmmds_upload.tar.gz": [
+          "read"
+        ],
+        "/etc/modem/sms_manager_phonebook.user": [
+          "read"
+        ],
+        "/etc/modem/sms_manager_atcmmds.user": [
+          "read"
+        ],
+        "/etc/modem/sms_manager_atcmmds": [
+          "list"
+        ],
+        "/etc/modem/sms_manager_atcmmds/*": [
+          "read"
+        ],
+        "/etc/modem/sms_manager_atcmmds/*.user": [
+          "read"
+        ],
+        "/etc/modem/sms_manager_ussdcodes.user": [
+          "read"
+        ],
+        "/etc/modem/sms_manager_ussdcodes": [
+          "list"
+        ],
+        "/etc/modem/sms_manager_ussdcodes/*": [
+          "read"
+        ],
+        "/etc/modem/sms_manager_ussdcodes/*.user": [
+          "read"
+        ]
+      },
+      "uci": [
+        "sms_manager",
+        "luci-app-sms-manager"
+      ],
+      "ubus": {
+        "file": [
+          "read"
+        ],
+        "sms_manager_sms_forward": [
+          "forward"
+        ],
+        "modemconfig-ko": [
+          "snapshot",
+          "thread",
+          "read_part",
+          "measure",
+          "voice_status",
+          "rcs_status",
+          "rcs_capability",
+          "call_history"
+        ]
+      }
+    },
+    "write": {
+      "cgi-io": [
+        "upload"
+      ],
+      "file": {
+        "/bin/mktemp /tmp/smsmgr_text.XXXXXX": [
+          "exec"
+        ],
+        "/tmp/smsmgr_text.*": [
+          "write"
+        ],
+        "/etc/sms_manager": [
+          "write"
+        ],
+        "/etc/crontabs/root": [
+          "write"
+        ],
+        "/etc/init.d/cron restart": [
+          "exec"
+        ],
+        "/bin/chmod": [
+          "exec"
+        ],
+        "/bin/rm": [
+          "exec"
+        ],
+        "/bin/tar": [
+          "exec"
+        ],
+        "/bin/sh": [
+          "exec"
+        ],
+        "/sys/class/leds/*/brightness": [
+          "write"
+        ],
+        "/tmp/mysms_manager.txt": [
+          "write"
+        ],
+        "/tmp/smsmgr_ussdcodes.tar.gz": [
+          "write"
+        ],
+        "/tmp/smsmgr_ussdcodes_upload.tar.gz": [
+          "write"
+        ],
+        "/tmp/smsmgr_atcmmds.tar.gz": [
+          "write"
+        ],
+        "/tmp/smsmgr_atcmmds_upload.tar.gz": [
+          "write"
+        ],
+        "/etc/modem/sms_manager_phonebook.user": [
+          "write"
+        ],
+        "/etc/modem/sms_manager_atcmmds.user": [
+          "write"
+        ],
+        "/etc/modem/sms_manager_atcmmds/*.user": [
+          "write"
+        ],
+        "/etc/modem/sms_manager_atcmmds/*": [
+          "write"
+        ],
+        "/etc/modem/sms_manager_ussdcodes.user": [
+          "write"
+        ],
+        "/etc/modem/sms_manager_ussdcodes/*.user": [
+          "write"
+        ],
+        "/etc/modem/sms_manager_ussdcodes/*": [
+          "write"
+        ]
+      },
+      "ubus": {
+        "file": [
+          "read",
+          "write",
+          "remove"
+        ],
+        "modemconfig-ko": [
+          "send",
+          "mark_read",
+          "delete_thread",
+          "save_contact",
+          "delete_contact",
+          "begin_upload",
+          "write_upload",
+          "delete_upload",
+          "voice_dial",
+          "voice_answer",
+          "voice_hangup",
+          "voice_audio",
+          "rcs_retry",
+          "voice_claim",
+          "voice_lease",
+          "voice_release"
+        ]
+      },
+      "uci": [
+        "sms_manager",
+        "luci-app-sms-manager"
+      ]
+    }
+  }
 }

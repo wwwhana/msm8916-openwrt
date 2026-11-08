@@ -1,77 +1,141 @@
 {
-	"admin/modem": {
-		"title": "Modem",
-		"order": 30,
-		"action": {
-			"type": "firstchild",
-			"recurse": true
-		}
-	},
-	
-	"admin/modem/luci-app-sms-manager": {
-		"title": "SMS Manager",
-		"order": 10,
-		"action": {
-			"type": "alias",
-			"path": "admin/modem/luci-app-sms-manager/sms_manager_readsms"
-		},
-		"depends": {
-			"acl": [ "luci-app-sms-manager" ],
-			"uci": { "sms_manager": true }
-		}
-	},
-	
-	"admin/modem/luci-app-sms-manager/sms_manager_readsms": {
-		"title": "Received Messages",
-		"order": 10,
-		"action": {
-			"type": "view",
-			"path": "modem/sms_manager_readsms"
-		}
-	},
-	
-	"admin/modem/luci-app-sms-manager/sms_manager_sendsms": {
-		"title": "Send Messages",
-		"order": 20,
-		"action": {
-			"type": "view",
-			"path": "modem/sms_manager_sendsms"
-		}
-	},
-	
-	"admin/modem/luci-app-sms-manager/sms_manager_sendussd": {
-		"title": "USSD Codes",
-		"order": 30,
-		"action": {
-			"type": "view",
-			"path": "modem/sms_manager_sendussd"
-		}
-	},
-	
-	"admin/modem/luci-app-sms-manager/sms_manager_sendat": {
-		"title": "AT Commands",
-		"order": 40,
-		"action": {
-			"type": "view",
-			"path": "modem/sms_manager_sendat"
-		}
-	},
-
-	"admin/modem/luci-app-sms-manager/sms_manager_config": {
-		"title": "Configuration",
-		"order": 50,
-		"action": {
-			"type": "view",
-			"path": "modem/sms_manager_config"
-		}
-	},
-	
-	"admin/modem/luci-app-sms-manager/sms_manager_support": {
-		"title": "Package update and support",
-		"order": 60,
-		"action": {
-			"type": "view",
-			"path": "modem/sms_manager_support"
-		}
-	}
+  "admin/messages": {
+    "title": "메시지",
+    "order": 29,
+    "action": {
+      "type": "view",
+      "path": "modem/messages"
+    },
+    "depends": {
+      "acl": [
+        "luci-app-sms-manager"
+      ]
+    }
+  },
+  "admin/modem": {
+    "title": "모뎀 설정",
+    "order": 30,
+    "action": {
+      "type": "firstchild",
+      "recurse": true
+    }
+  },
+  "admin/modem/sms": {
+    "title": "문자 설정",
+    "order": 30,
+    "action": {
+      "type": "view",
+      "path": "modem/sms_manager_config"
+    },
+    "depends": {
+      "acl": [
+        "luci-app-sms-manager"
+      ]
+    }
+  },
+  "admin/modem/ussd": {
+    "title": "USSD",
+    "order": 40,
+    "action": {
+      "type": "view",
+      "path": "modem/sms_manager_sendussd"
+    },
+    "depends": {
+      "acl": [
+        "luci-app-sms-manager"
+      ]
+    }
+  },
+  "admin/modem/at": {
+    "title": "AT 명령",
+    "order": 50,
+    "action": {
+      "type": "view",
+      "path": "modem/sms_manager_sendat"
+    },
+    "depends": {
+      "acl": [
+        "luci-app-sms-manager"
+      ]
+    }
+  },
+  "admin/modem/luci-app-sms-manager": {
+    "action": {
+      "type": "alias",
+      "path": "admin/messages"
+    },
+    "depends": {
+      "acl": [
+        "luci-app-sms-manager"
+      ]
+    }
+  },
+  "admin/modem/luci-app-sms-manager/sms_manager_readsms": {
+    "action": {
+      "type": "alias",
+      "path": "admin/messages"
+    },
+    "depends": {
+      "acl": [
+        "luci-app-sms-manager"
+      ]
+    }
+  },
+  "admin/modem/luci-app-sms-manager/sms_manager_sendsms": {
+    "action": {
+      "type": "alias",
+      "path": "admin/messages"
+    },
+    "depends": {
+      "acl": [
+        "luci-app-sms-manager"
+      ]
+    }
+  },
+  "admin/modem/luci-app-sms-manager/sms_manager_sendussd": {
+    "action": {
+      "type": "alias",
+      "path": "admin/modem/ussd"
+    },
+    "depends": {
+      "acl": [
+        "luci-app-sms-manager"
+      ]
+    }
+  },
+  "admin/modem/luci-app-sms-manager/sms_manager_sendat": {
+    "action": {
+      "type": "alias",
+      "path": "admin/modem/at"
+    },
+    "depends": {
+      "acl": [
+        "luci-app-sms-manager"
+      ]
+    }
+  },
+  "admin/modem/luci-app-sms-manager/sms_manager_config": {
+    "action": {
+      "type": "alias",
+      "path": "admin/modem/sms"
+    },
+    "depends": {
+      "acl": [
+        "luci-app-sms-manager"
+      ]
+    }
+  },
+  "admin/calls": {
+    "title": "전화",
+    "order": 28,
+    "action": {
+      "type": "view",
+      "path": "modem/calls"
+    },
+    "depends": {
+      "acl": [
+        "luci-app-sms-manager"
+      ]
+    }
+  }
 }

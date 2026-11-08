@@ -1,0 +1,12 @@
+#!/bin/sh
+case "$1" in
+    list) echo '{"snapshot":{},"call_history":{"before":64},"thread":{"id":"","before":64},"read_part":{"id":"","offset":64},"send":{"subscription":"","session":"","request_id":"","to":"","text":"","attachments":[],"protocol":""},"measure":{"subscription":"","session":"","text":"","attachment_count":0,"protocol":"","to":""},"begin_upload":{"subscription":"","session":"","request_id":"","filename":"","mime_type":"","size":0},"write_upload":{"subscription":"","session":"","id":"","offset":0,"data":""},"delete_upload":{"subscription":"","session":"","id":""},"mark_read":{"id":"","through":64},"delete_thread":{"id":""},"save_contact":{"contact":{}},"delete_contact":{"id":""},"voice_status":{"owner":""},"voice_dial":{"subscription":"","session":"","to":"","audio":"","device":"","owner":""},"voice_answer":{"subscription":"","session":"","id":"","audio":"","device":"","owner":""},"voice_hangup":{"subscription":"","session":"","id":"","owner":""},"voice_audio":{"subscription":"","session":"","id":"","sequence":0,"data":"","owner":""},"rcs_status":{},"rcs_capability":{"subscription":"","session":"","to":""},"rcs_retry":{"subscription":"","session":""},"voice_claim":{"subscription":"","session":"","owner":""},"voice_lease":{"subscription":"","session":"","owner":""},"voice_release":{"subscription":"","session":"","owner":"","reason":""}}' ;;
+    call) case "$2" in
+        voice_status|voice_claim|voice_lease|voice_release|voice_dial|voice_answer|voice_hangup|voice_audio)
+            exec /usr/libexec/modemconfig-ko-control "$2" ;;
+        rcs_status|rcs_capability|rcs_retry)
+            exec /usr/sbin/modemconfig-ko control "$2" ;;
+        snapshot|call_history|thread|read_part|send|measure|begin_upload|write_upload|delete_upload|mark_read|delete_thread|save_contact|delete_contact)
+            exec /usr/sbin/modemconfig-ko messages "$2" ;;
+    esac ;;
+esac

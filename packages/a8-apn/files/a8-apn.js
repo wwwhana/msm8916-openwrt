@@ -14,7 +14,8 @@ return view.extend({
     },
     render: function(data) {
         var state = data[1], m, s, o;
-        var states = { 'no-sim': 'SIM 없음', 'waiting-sim': 'SIM 정보 대기 중',
+        var states = { 'modem-unavailable': '모뎀을 확인할 수 없습니다',
+            'no-sim': 'SIM 인식 안 됨', 'waiting-sim': 'SIM 정보 대기 중',
             'sim-locked': 'SIM 잠금 해제 필요', 'no-match': '자동 검색 결과 없음 — 수동 프로파일을 선택하세요',
             'profile-not-found': '저장한 프로파일을 선택하세요', 'ready': '프로파일 준비됨',
             'applied': '프로파일 적용됨', 'restart-failed': '연결을 다시 시작하지 못했습니다',

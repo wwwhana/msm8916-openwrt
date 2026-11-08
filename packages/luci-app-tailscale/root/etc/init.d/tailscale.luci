@@ -140,8 +140,7 @@ stop_instance() {
 
 	/usr/sbin/tailscaled --cleanup
 
-	# Remove existing link or folder
-	rm -rf "$CONFIG_PATH"
+	# Keep the state directory and its login keys when temporarily disabled.
 }
 
 stop_service() {

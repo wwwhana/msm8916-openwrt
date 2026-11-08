@@ -1,0 +1,27 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+case "$1" in
+on) enabled=1; command=start ;;
+off) enabled=0; command=stop ;;
+status)
+	controller=$(bluetoothctl --timeout 3 show) || exit 1
+	echo "$controller" | grep -q 'Powered:[[:space:]]*yes' || exit 1
+	echo "$controller" | grep -q '00001116-0000-1000-8000-00805f9b34fb'; exit $? ;;
+*) echo 'usage: bt-nap on|off|status' >&2; exit 1 ;;
+esac
+
+[ -z "$(uci -q changes bt-nap)" ] || { echo 'Apply pending Bluetooth sharing edits first' >&2; exit 1; }
+uci -q get bt-nap.main >/dev/null || exit 1
+[ "$enabled" = 0 ] || bluetoothctl --timeout 6 power on >/dev/null 2>&1 || exit 1
+uci set "bt-nap.main.enabled=$enabled" && uci commit bt-nap || exit 1
+/etc/init.d/bt-nap "$command" || exit 1
+i=0
+while [ "$i" -lt 5 ]; do
+	active=0
+	"$0" status >/dev/null 2>&1 && active=1
+	[ "$active" = "$enabled" ] && exit 0
+	sleep 1
+	i=$((i+1))
+done
+echo 'Bluetooth sharing state did not change; check Bluetooth power' >&2
+exit 1

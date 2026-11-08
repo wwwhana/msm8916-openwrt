@@ -140,18 +140,20 @@
  static bool check_format_bit(void)
  {
  	bool ret = false;
-@@ -5602,6 +5685,21 @@
- 		boot_into_fastboot = true;
- 	#endif
+@@ -5647,10 +5730,25 @@
+ #if LK2ND_FORCE_FASTBOOT
+ 	boot_into_fastboot = true;
+ 	dprintf(INFO, "Fastboot mode was forced with compile-time flag.\n");
+ #endif
  
 +#if defined(BOOT_FAILOVER_COUNT) && BOOT_FAILOVER_COUNT > 0
-+	/* Boot-failover: count consecutive boots that never reach userspace
-+	 * (OpenWrt clears the counter in S99recovery-bootcount once the
-+	 * system is up). After BOOT_FAILOVER_COUNT attempts, boot the
-+	 * recovery partition instead - the only rescue path for a board
-+	 * whose boot partition is broken and which has no dedicated key.
-+	 * Runs before the reboot-reason check so an explicit reboot into
-+	 * recovery is never counted. */
++	/* Count only normal boot attempts that never reach userspace.
++	 * OpenWrt clears the counter in S99recovery-bootcount once it is up.
++	 * Resolve reboot reasons and forced Fastboot before counting, so
++	 * intentional rescue boots cannot trip automatic recovery.
++	 * The next normal attempt still participates in automatic rescue.
++	 * Keep this before the LCD menu so automatic recovery bypasses LCD.
++	 * A forced-reset shortcut continues to skip the counter. */
 +	if (!boot_into_recovery && !boot_into_fastboot)
 +	{
 +		if (boot_failover_check())
@@ -159,6 +161,8 @@
 +	}
 +#endif
 +
- #if USE_PON_REBOOT_REG
- 	reboot_mode = check_hard_reboot_mode();
- #else
+ normal_boot:
+ 	if (!boot_into_fastboot)
+ 	{
+ #if WITH_LK2ND_BOOT
+ 		if (!boot_into_recovery)

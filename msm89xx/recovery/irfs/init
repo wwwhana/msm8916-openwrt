@@ -78,6 +78,12 @@ fi
 # /dev again, or the console below finds no ttyGS0 and never starts.
 mdev -s 2>/dev/null
 
+# Keep the display independent of USB, networking and the rescue shell.
+# A missing LCD on an LED-only board is a normal configuration.
+if [ -x /usr/sbin/recovery-display ]; then
+	/usr/sbin/recovery-display &
+fi
+
 # Kernel modules.  The production kernel builds the wireless stack as MODULES
 # (only configfs, the USB gadget and the WCNSS/SMD plumbing are built in), so
 # there is no wlan0 - and therefore no AP - until they are loaded.  The

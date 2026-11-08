@@ -9,6 +9,7 @@ LUCI_DEPENDS:=+tailscale
 LUCI_PKGARCH:=all
 
 PKG_VERSION:=1.2.6
+PKG_RELEASE:=2
 
 define Package/luci-app-tailscale/postinst
 #!/bin/sh

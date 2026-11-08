@@ -1,8 +1,73 @@
 {
+  "admin/modem": {
+    "title": "모뎀 설정",
+    "order": 30,
+    "action": {
+      "type": "firstchild",
+      "recurse": true
+    }
+  },
+  "admin/modem/apn": {
+    "title": "APN",
+    "order": 20,
+    "action": {
+      "type": "view",
+      "path": "a8-apn"
+    },
+    "depends": {
+      "acl": [
+        "a8-apn"
+      ],
+      "uci": {
+        "a8_apn": true
+      }
+    }
+  },
+  "admin/modem/modemconfig-ko": {
+    "action": {
+      "type": "alias",
+      "path": "admin/status/modemmanager"
+    },
+    "depends": {
+      "acl": [
+        "a8-apn"
+      ]
+    }
+  },
   "admin/network/a8-apn": {
-    "title": "APN profiles",
-    "order": 35,
-    "action": { "type": "view", "path": "a8-apn" },
-    "depends": { "acl": ["a8-apn"], "uci": { "a8_apn": true } }
+    "action": {
+      "type": "alias",
+      "path": "admin/modem/apn"
+    },
+    "depends": {
+      "acl": [
+        "a8-apn"
+      ],
+      "uci": {
+        "a8_apn": true
+      }
+    }
+  },
+  "admin/network/a8-ims": {
+    "action": {
+      "type": "alias",
+      "path": "admin/status/modemmanager"
+    },
+    "depends": {
+      "acl": [
+        "a8-apn"
+      ]
+    }
+  },
+  "admin/status/mobile-network": {
+    "action": {
+      "type": "alias",
+      "path": "admin/status/modemmanager"
+    },
+    "depends": {
+      "acl": [
+        "a8-apn"
+      ]
+    }
   }
 }

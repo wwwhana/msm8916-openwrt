@@ -13,6 +13,11 @@ FUNCTIONS = SOURCE.split('case "${1:-}" in\n', 1)[0].replace('. /lib/functions.s
 
 
 class PackagePrepareTests(unittest.TestCase):
+    def test_modem_protocol_overlay_is_executable(self):
+        script = ROOT / 'openwrt-overlay/feeds/packages/net/modemmanager/files/lib/netifd/proto/modemmanager.sh'
+        self.assertEqual(script.stat().st_mode & 0o111, 0o111,
+                         'netifd repeatedly restarts a protocol it cannot execute')
+
     def prepare(self, custom=False, target=True):
         source = (ROOT / 'scripts/openwrt-prepare.sh').read_text()
         body = source.split('install_package_patches() {', 1)[1].split('\n}\n', 1)[0]
@@ -84,6 +89,51 @@ echo completed >> "$BASE/events"
                     self.assertEqual(('ip:link set usb-' + name + ' master br-lan') in events, name in active)
                 self.assertIn('service:network reload', events)
                 self.assertTrue(events.endswith('completed\n'))
+
+
+class IdentityTests(unittest.TestCase):
+    def test_adapter_mode_does_not_start_or_rebind_a_pc_gadget(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base=Path(tmp); (base/'test-port').mkdir()
+            (base/'test-port/role').write_text('host\n')
+            script = FUNCTIONS.replace('/sys/class/usb_role',tmp) + '''
+log() { :; }
+load_config() { exit 99; }
+setup_gadget
+rebind_adb
+'''
+            result = subprocess.run(['/bin/sh'], input=script, text=True,
+                capture_output=True)
+            self.assertEqual(result.returncode,0,result.stderr)
+
+    def test_identity_and_network_addresses_survive_a_new_process(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            script = FUNCTIONS + '''
+SERIAL_FILE="$BASE/serial"
+MACHINE_ID_FILE="$BASE/machine-id"
+get_serial_number
+generate_mac ncm-host
+generate_mac ncm-dev
+'''
+            def read_identity():
+                return subprocess.check_output([os.environ.get('TEST_SHELL', '/bin/sh'), '-c', script],
+                                               env={**os.environ, 'BASE': tmp}, text=True).splitlines()
+            first = read_identity()
+            self.assertRegex(first[0], r'^[a-f0-9]{16}$')
+            self.assertNotEqual(first[1], first[2])
+            self.assertEqual((base / 'serial').stat().st_mode & 0o777, 0o600)
+            self.assertEqual(read_identity(), first)
+            (base / 'machine-id').write_text('machine-id-appeared-later')
+            self.assertEqual(read_identity(), first)
+            (base / 'serial').write_text('existing-device-serial\n')
+            pinned = read_identity()
+            self.assertEqual(pinned[0], 'existing-device-serial')
+            self.assertEqual(read_identity(), pinned)
+            (base / 'serial').write_text('invalid/serial\n')
+            repaired = read_identity()
+            self.assertRegex(repaired[0], r'^[a-f0-9]{16}$')
+            self.assertEqual(read_identity(), repaired)
 
 
 class GadgetTests(unittest.TestCase):

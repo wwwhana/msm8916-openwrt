@@ -71,6 +71,7 @@ end
 
 function M.choose(settings, saved, database, sim)
     if not enabled(settings.enabled) then return nil, 'disabled' end
+    if sim.error then return nil, sim.error end
     if not sim.present then return nil, 'no-sim' end
     if sim.locked then return nil, 'sim-locked' end
     if settings.mode ~= 'auto' and settings.mode ~= 'profile' then return nil, 'invalid-mode' end
