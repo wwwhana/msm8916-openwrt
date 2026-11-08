@@ -1390,19 +1390,20 @@ Android CarrierSettings and ImsStack do not run merely by copying their
 configuration into OpenWrt. The older RCS provisioning patches address a
 different service and are not an ordinary IMS SMS implementation.
 
-The next required results are physical SIM-switch testing and per-SIM APN
+At that IMS SMS milestone, the next required results were physical SIM-switch testing and per-SIM APN
 settings, post-reboot verification, OpenWrt package/image integration,
 a live transmission from the new conversation UI, and carrier-specific VoLTE,
 MMS transmission and RCS implementation. LG U+ MMS reception is verified above.
 Only an LG U+ SIM was observed; SKT/KT registration
 and SMS remain **unverified**. Strict TTA R6 conformance is also unverified.
 The owner's prerequisite for starting RCS work, successful ordinary IMS SMS,
-has now been met. The existing Joan/shared implementation provides ACS
+had been met. The existing Joan/shared implementation provides ACS
 fetching, provisioning-document parsing, separate RCS SIP registration and
 TLS/MSRP handling in Android Java/C++; these require a Linux implementation
 and are not supplied by the currently SMS-only Go client. The Korean ACS
-endpoint mapping is in CarrierSettings `VendorOverrides.kt`. No RCS
-provisioning request or RCS user message has been sent from this A8 yet.
+endpoint mapping is in CarrierSettings `VendorOverrides.kt`. At that stage no RCS
+provisioning request or RCS user message had been sent from this A8. The later
+Linux implementation and current registration result are recorded below.
 The PDC configuration was written as described above;
 modem executable images were not flashed and sensitive NV backups were not read.
 
@@ -1419,6 +1420,53 @@ active modem device. Tailscale reports DNS/control
 server reachability failure and `NeedsLogin` while cellular data was down.
 These describe that earlier failure, not the later successful LTE-bound ping
 or the subsequent station-uplink state in the current table.
+
+### RCS 상대 기능 조회와 가입 설정 처리 (2026-11-08)
+
+A8에서 기존 실행 파일의 `modemconfig-ko rcs_status`를 읽어 RCS 등록 상태
+`registered`, 준비 상태 `true`, SIP 응답 `200`, 가입 설정 버전 `15`,
+`Digest` 인증과 `SIPoTLS` 연결을 확인했다. 인증 정보가 들어 있는 설정 파일은
+열지 않았다. 이 결과는 아래 새 코드의 기기 실행 결과와 구분한다.
+
+사용자가 제공한 `TTAK.KO-06.0410R9.pdf`의 §§6.3–6.5, §7.2.5와 부록 B를
+대조해 `tools/modemconfig-ko`에 다음 처리를 추가했다.
+
+- 통신사 설정의 `CAPDISCOVERY/defaultDisc=1`이면 Presence로 상대 기능을
+  조회한다. 익명 `SUBSCRIBE` 뒤 `NOTIFY`의 PIDF 문서를 확인하며, 최종 응답보다
+  먼저 오는 알림도 처리한다. 대화 식별자·상대 번호·XML 이름 공간이 맞지 않는
+  알림을 거부하고, 조회 거절·시간 초과·서버 오류를 상대의 미지원으로 확정하지 않는다.
+- `PUBLISH`로 실제 구현된 기능 조회와 1:1 대화만 알린다. 서버가 정한 유효기간,
+  `SIP-ETag`와 `SIP-If-Match`, 재인증, `412`·`423` 복구와 재시도 간격을 처리한다.
+  유효기간이 끝나면 준비 상태를 해제하며, 정상 연결 해제 시에는 기능 알림 제거와
+  등록 해제를 시도한다. 서버와 연결이 이미 끊겼다면 제거 요청의 도착은 보장하지 않는다.
+- 조회 결과는 등록 연결마다 따로 보관하고, 통신사가 정한 만료 시간을 적용한다.
+  같은 상대의 동시 조회는 합치며, 새 등록이나 SIM 전환 뒤에는 이전 결과를 쓰지 않는다.
+  OPTIONS 방식에서는 완전한 기능 식별자로 지원 여부를 확인한다.
+- 같은 버전의 유효기간 갱신은 기존 가입 설정과 합친다. 통신사가 버전 `0`, `-1`,
+  `-2`로 해제하면 예전 인증 정보와 서비스 설정을 지우고 해제 표식만 저장한다.
+  `-1`은 프로그램을 다시 시작해도 유지한다. HTTP `403`·HTTPS `511` 응답 뒤에는
+  저장된 설정을 지우고, 잘못된 기존 프로필은 전체 설정을 다시 요청한다.
+- 수신·읽음 확인은 CPIM의 IMDN 이름 공간을 따라 해석한다. 확인 메시지의 발신·수신
+  표기는 익명으로 만들고 `Content-Disposition: notification`을 넣는다. 새 RCS
+  연결은 현재 인터넷 경로를 사용한다. LTE에서 Wi-Fi로 바뀔 때의 실제 연결 복구는 미확인이다.
+
+가짜 SIP 상대와 임시 설정 저장소를 사용한 새 검사 **10개**, 기존 앱 전체 검사,
+관련 등록·문자·SIP·통화 검사가 통과했다. RCS 검사에는 Go의 데이터 충돌 검사도
+적용해 통과했다. 실제 외부 번호로 메시지를 보내지 않고 Linux ARM64 빌드를 마쳤다.
+
+- 후보 실행 파일: VM `/home/builder/a8/ims-build/modemconfig-ko-rcs`
+- 크기: `15,728,802`바이트
+- SHA-256: `fed2e2fdab721d4d8916314c49c893bfd2772cd589a98394cbcc076b9348e406`
+
+이번 후보의 기기 적용과 실제 RCS 사용자 메시지 송수신은 **미실행**이다. 그룹 대화,
+HTTP 파일 전송, MaaP, 메시지 취소와 CFS 재전송, 주소록 전체의 주기적 기능 조회와
+RLS, 설정 갱신을 지시하는 SMS 처리는 아직 구현되지 않았다. 현재 User-Agent의
+`RCS_OpenWrt_Router` 기기 종류는 R9에 열거된 값이 아닌 확장값이므로, 전체 R9 준수나
+SKT·KT·LG U+ 간 모든 RCS 기능 호환을 확인한 것으로 보고하지 않는다.
+
+SIP 동작은 [RFC 3903](https://www.rfc-editor.org/rfc/rfc3903.html)의 기능 알림,
+[RFC 6665](https://www.rfc-editor.org/rfc/rfc6665.html)의 구독·알림 순서와
+[RFC 3863](https://www.rfc-editor.org/rfc/rfc3863.html)의 PIDF 형식도 대조했다.
 
 ## Documentation reviewed before implementation
 

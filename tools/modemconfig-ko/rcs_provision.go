@@ -154,7 +154,6 @@ type rcsCache struct {
 	XML     []byte `json:"xml"`
 }
 type rcsService struct {
-	capabilities    map[string]rcsPeerCapability
 	mu              sync.Mutex
 	state           string
 	httpStatus      int
@@ -165,6 +164,9 @@ type rcsService struct {
 	sipStatus       int
 	auth, transport string
 	chat            bool
+	discovery       string
+	publishStatus   int
+	publishUntil    time.Time
 }
 
 func (r *rcsService) set(state string, status, version int) {
@@ -176,7 +178,15 @@ func (r *rcsService) set(state string, status, version int) {
 func (r *rcsService) snapshot() map[string]any {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return map[string]any{"state": r.state, "ready": r.state == "registered", "http_status": r.httpStatus, "sip_status": r.sipStatus, "config_version": r.version, "updated_at": r.updated, "auth": r.auth, "transport": r.transport, "chat": r.chat}
+	state, ready := r.state, r.readyLocked()
+	if state == "registered" && !ready {
+		state = "publishing"
+	}
+	return map[string]any{"state": state, "ready": ready, "http_status": r.httpStatus, "sip_status": r.sipStatus, "config_version": r.version, "updated_at": r.updated, "auth": r.auth, "transport": r.transport, "chat": r.chat, "discovery": r.discovery, "publish_status": r.publishStatus}
+}
+
+func (r *rcsService) readyLocked() bool {
+	return r.state == "registered" && (r.discovery != "presence" || time.Now().Before(r.publishUntil))
 }
 
 func rcsHTTPClient() (*http.Client, error) {
@@ -383,6 +393,17 @@ func startRCS(ctx context.Context, db *messageDB, scope, plmn, imsi, imei, numbe
 					continue
 				}
 			}
+			// A permanent operator deprovisioning survives a process restart.
+			// A different SIM has a different scope and never inherits this marker.
+			if doc, _ := parseRCSConfig(cached.XML); rcsConfigVersion(doc) == -1 {
+				r.set("disabled-by-carrier", 0, -1)
+				select {
+				case <-ctx.Done():
+					return
+				case <-r.retry:
+					continue
+				}
+			}
 			server, operator, err := rcsACS(plmn)
 			if err != nil {
 				r.set("unsupported-carrier", 0, 0)
@@ -399,12 +420,21 @@ func startRCS(ctx context.Context, db *messageDB, scope, plmn, imsi, imei, numbe
 			var data []byte
 			fresh := false
 			cachedDoc, _ := parseRCSConfig(cached.XML)
-			if cachedDoc != nil && time.Now().Unix() >= cached.Fetched && time.Now().Before(rcsExpiry(cachedDoc, cached.Fetched)) && !forceFetch {
+			if rcsConfigVersion(cachedDoc) > 0 {
+				if _, e := parseRCSProfile(cachedDoc, private, public); e != nil {
+					cachedDoc, cached = nil, rcsCache{}
+				}
+			}
+			if rcsConfigVersion(cachedDoc) > 0 && time.Now().Unix() >= cached.Fetched && time.Now().Before(rcsExpiry(cachedDoc, cached.Fetched)) && !forceFetch {
 				data = cached.XML
 			} else if err == nil {
 				fresh = true
 				if cachedDoc != nil {
-					params.Set("vers", rcsNodes(cachedDoc.Nodes, "VERS")[0].value("version"))
+					if version := rcsConfigVersion(cachedDoc); version > 0 {
+						value := strconv.Itoa(version)
+						params.Set("vers", value)
+						params.Set("rcs_state", value)
+					}
 					if tokens := rcsNodes(cachedDoc.Nodes, "TOKEN"); len(tokens) == 1 {
 						params.Set("token", tokens[0].value("token"))
 					}
@@ -433,20 +463,32 @@ func startRCS(ctx context.Context, db *messageDB, scope, plmn, imsi, imei, numbe
 				if err == nil {
 					version, _ = strconv.Atoi(rcsNodes(doc.Nodes, "VERS")[0].value("version"))
 					state = "disabled-by-carrier"
-					if version > 0 && verify(ctx) == nil {
+					if verify(ctx) == nil {
 						if fresh {
-							if cachedDoc != nil && version == rcsConfigVersion(cachedDoc) && len(rcsNodes(doc.Nodes, "APPLICATION")) == 0 {
-								doc = mergeRCSConfig(cachedDoc, doc)
-								data, _ = xml.Marshal(doc)
+							doc, err = rcsConfigUpdate(cachedDoc, doc, private, public)
+							if err == nil {
+								data, err = xml.Marshal(doc)
 							}
-							cached = rcsCache{PLMN: plmn, Fetched: time.Now().Unix(), XML: data}
-							cache, _ := json.Marshal(cached)
-							err = writePrivate(cachePath, cache)
+							if err == nil {
+								updated := rcsCache{PLMN: plmn, Fetched: time.Now().Unix(), XML: data}
+								if version <= 0 {
+									cached = updated
+								}
+								cache, _ := json.Marshal(updated)
+								err = writePrivate(cachePath, cache)
+								if err != nil && version <= 0 {
+									// A full disk must not preserve the old active profile.
+									_ = os.Remove(cachePath)
+								}
+								if err == nil {
+									cached = updated
+								}
+							}
 						}
-						if err == nil {
+						if err == nil && version > 0 {
 							state = "configured"
 						}
-					} else if version > 0 {
+					} else {
 						err = errors.New("sim-unavailable")
 					}
 				}
@@ -457,6 +499,12 @@ func startRCS(ctx context.Context, db *messageDB, scope, plmn, imsi, imei, numbe
 				var f *rcsFailure
 				if errors.As(err, &f) {
 					state, status, retry = f.state, f.status, f.retry
+					if status == 403 || status == 511 {
+						cached = rcsCache{}
+						if e := os.Remove(cachePath); e != nil && !os.IsNotExist(e) {
+							state = "rcs-cache-invalid"
+						}
+					}
 				} else {
 					for _, code := range []string{"rcs-otp-timeout", "rcs-otp-invalid", "rcs-config-invalid", "rcs-auth-unsupported", "sim-unavailable"} {
 						if err.Error() == code {
@@ -516,6 +564,7 @@ func startRCS(ctx context.Context, db *messageDB, scope, plmn, imsi, imei, numbe
 				}
 				return
 			case <-r.retry:
+				forceFetch = true
 			case <-after:
 			}
 			if timer != nil {
@@ -568,6 +617,24 @@ func mergeRCSConfig(old, fresh *rcsDocument) *rcsDocument {
 	return &result
 }
 
+func rcsConfigUpdate(previous, fresh *rcsDocument, private, public string) (*rcsDocument, error) {
+	if fresh == nil {
+		return nil, errors.New("rcs-config-invalid")
+	}
+	version := rcsConfigVersion(fresh)
+	if version <= 0 {
+		// Keep the operator's disable marker, never its obsolete credentials.
+		return &rcsDocument{XMLName: fresh.XMLName, Nodes: rcsNodes(fresh.Nodes, "VERS")}, nil
+	}
+	if previous != nil && version == rcsConfigVersion(previous) && len(rcsNodes(fresh.Nodes, "APPLICATION")) == 0 {
+		fresh = mergeRCSConfig(previous, fresh)
+	}
+	if _, err := parseRCSProfile(fresh, private, public); err != nil {
+		return nil, err
+	}
+	return fresh, nil
+}
+
 func (r *rcsService) connected(ctx context.Context, profile *rcsProfile, provider security.AKAProvider, agent, scope string, db *messageDB, verify func(context.Context) error, expiry time.Time) error {
 	connection, stop := context.WithCancel(ctx)
 	defer stop()
@@ -586,17 +653,49 @@ func (r *rcsService) connected(ctx context.Context, profile *rcsProfile, provide
 	if err != nil {
 		return err
 	}
+	publication := &rcsPublication{}
+	defer func() {
+		select {
+		case <-client.done:
+			return
+		default:
+		}
+		// Remove advertised capabilities before the RCS registration ends.
+		cleanup, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		if verify(cleanup) != nil {
+			return
+		}
+		if publication.etag != "" {
+			_, _ = publication.request(cleanup, client, true)
+		}
+		_, _ = client.register(cleanup, 0)
+	}()
 	r.mu.Lock()
 	r.client, r.sipStatus = client, 200
+	r.discovery, r.publishStatus, r.publishUntil = "options", 0, time.Time{}
+	if profile.presence {
+		r.discovery = "presence"
+	}
 	r.mu.Unlock()
 	defer func() {
 		r.mu.Lock()
 		if r.client == client {
 			r.client = nil
+			r.state, r.updated = "configuring", time.Now().Unix()
 		}
 		r.mu.Unlock()
 	}()
-	r.set("registered", 0, r.version)
+	var publishTimer *time.Timer
+	var publish <-chan time.Time
+	if profile.presence {
+		r.set("publishing", 0, r.version)
+		publishTimer = time.NewTimer(0)
+		publish = publishTimer.C
+		defer publishTimer.Stop()
+	} else {
+		r.set("registered", 0, r.version)
+	}
 	refresh := time.NewTimer(duration * 4 / 5)
 	defer refresh.Stop()
 	validity := time.NewTimer(time.Until(expiry))
@@ -613,6 +712,19 @@ func (r *rcsService) connected(ctx context.Context, profile *rcsProfile, provide
 			return nil
 		case <-client.done:
 			return errors.New("rcs-sip-network")
+		case <-publish:
+			update, cancel := context.WithTimeout(connection, 8*time.Second)
+			publication.update(update, client, time.Now())
+			cancel()
+			r.mu.Lock()
+			r.publishStatus, r.publishUntil = publication.status, publication.until
+			r.mu.Unlock()
+			state := "publishing"
+			if time.Now().Before(publication.until) {
+				state = "registered"
+			}
+			r.set(state, 0, r.version)
+			publishTimer.Reset(publication.delay(time.Now()))
 		case <-keepalive.C:
 			if !rcsEnabled() {
 				return errors.New("disabled")

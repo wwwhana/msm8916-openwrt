@@ -26,7 +26,9 @@ import (
 	"github.com/damonto/ims-go/ims/sip"
 )
 
-const rcsChatFeatures = `+g.3gpp.icsi-ref="urn%3Aurn-7%3A3gpp-service.ims.icsi.oma.cpm.session";+g.3gpp.iari-ref="urn%3Aurn-7%3A3gpp-application.ims.iari.rcse.im"`
+const rcsChatFeatures = `+g.3gpp.icsi-ref="urn%3Aurn-7%3A3gpp-service.ims.icsi.oma.cpm.session"`
+const rcsPresenceFeature = `+g.3gpp.iari-ref="urn%3Aurn-7%3A3gpp-application.ims.iari.rcse.dp"`
+const rcsAllow = "INVITE,ACK,CANCEL,BYE,MESSAGE,OPTIONS,NOTIFY"
 
 type rcsStream struct {
 	conn            net.Conn
@@ -135,6 +137,9 @@ type rcsSIP struct {
 	dialogs                               map[string]*rcsDialog
 	done                                  chan struct{}
 	transport                             session.Transport
+	presenceQueries                       map[string]*rcsPresenceQuery
+	capabilities                          map[string]rcsPeerCapability
+	capabilityQueries                     map[string]*rcsCapabilityQuery
 }
 
 type rcsEndpoint struct{ address, identity string }
@@ -232,6 +237,9 @@ func openRCSSIP(ctx context.Context, profile *rcsProfile, provider security.AKAP
 	if profile.chat {
 		contact += ";" + rcsChatFeatures
 	}
+	if profile.presence {
+		contact += ";" + rcsPresenceFeature
+	}
 	r := &rcsSIP{stack: stack, profile: profile, provider: provider, agent: agent, contact: contact, callID: callID, tag: tag, instance: instance, db: db, verify: verify, ctx: ctx, dialogs: map[string]*rcsDialog{}, done: make(chan struct{}), transport: stream}
 	if _, err = stack.Attach(r); err != nil {
 		stack.Close()
@@ -263,8 +271,67 @@ func (r *rcsSIP) request(method, target, to, from, callID string, sequence int) 
 	request.Headers.Add("Max-Forwards", "70")
 	request.Headers.Add("User-Agent", r.agent)
 	request.Headers.Add("Contact", r.contact)
-	request.Headers.Add("Allow", "INVITE,ACK,CANCEL,BYE,MESSAGE,OPTIONS,NOTIFY")
+	request.Headers.Add("Allow", rcsAllow)
 	return request
+}
+
+// Non-INVITE requests may be challenged separately from REGISTER. Bind each
+// Digest response to its actual method, URI and body, including proxy auth.
+func (r *rcsSIP) exchange(ctx context.Context, request sip.Message) (sip.Message, error) {
+	proofs := map[string]rcsDigestProof{}
+	for attempt := 0; attempt < 3; attempt++ {
+		response, err := r.stack.Exchange(ctx, request)
+		if err != nil {
+			return sip.Message{}, errors.New("rcs-sip-network")
+		}
+		status := response.StatusCode()
+		if response.Headers.Has("Security-Server") || response.HeaderHasToken("Require", "sec-agree") {
+			return sip.Message{}, errors.New("rcs-security-unsupported")
+		}
+		if status != 401 && status != 407 {
+			for header, proof := range proofs {
+				if value := response.Header(header); value != "" && status >= 200 && status < 300 {
+					var info security.Info
+					if info.UnmarshalText([]byte(value)) != nil || proof.verify(info, string(response.Body)) != nil {
+						return sip.Message{}, errors.New("rcs-server-proof")
+					}
+				}
+			}
+			return response, nil
+		}
+		if r.profile.auth != "Digest" {
+			return sip.Message{}, errors.New("rcs-auth-unsupported")
+		}
+		header, challengeHeader, proofHeader := "Authorization", "WWW-Authenticate", "Authentication-Info"
+		if status == 407 {
+			header, challengeHeader, proofHeader = "Proxy-Authorization", "Proxy-Authenticate", "Proxy-Authentication-Info"
+		}
+		challenge, err := parseRCSChallenge(response.Header(challengeHeader))
+		if err != nil || challenge.Realm != r.profile.realm {
+			return sip.Message{}, errors.New("rcs-auth-realm")
+		}
+		proof, err := rcsDigest(challenge, r.profile.username, r.profile.password, request.Method(), sip.RequestURI(request), string(request.Body), 1)
+		if err != nil {
+			return sip.Message{}, err
+		}
+		proofs[proofHeader] = proof
+		request.Headers.Set(header, proof.auth.String())
+		parts := strings.Fields(request.Header("CSeq"))
+		if len(parts) != 2 {
+			return sip.Message{}, errors.New("rcs-sip-sequence")
+		}
+		sequence, err := strconv.Atoi(parts[0])
+		if err != nil || sequence < 1 || sequence >= 1<<31-1 {
+			return sip.Message{}, errors.New("rcs-sip-sequence")
+		}
+		request.Headers.Set("CSeq", strconv.Itoa(sequence+1)+" "+request.Method())
+		protocol := "TCP"
+		if r.profile.transport == "SIPoTLS" {
+			protocol = "TLS"
+		}
+		request.Headers.Set("Via", "SIP/2.0/"+protocol+" "+r.stack.LocalAddr().String()+";branch=z9hG4bK"+sip.RandomHex(20)+";rport")
+	}
+	return sip.Message{}, errors.New("rcs-auth-failed")
 }
 
 func (r *rcsSIP) register(ctx context.Context, expires int) (time.Duration, error) {

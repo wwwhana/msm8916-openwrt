@@ -88,7 +88,7 @@ func (db *messageDB) acceptRCS(peer, own, networkID string, data []byte) (cpimMe
 	receipts := ""
 	for kind, requested := range map[string]bool{"delivered": m.delivery, "displayed": m.display} {
 		if requested {
-			receipts += "INSERT INTO rcs_receipts(message_id,kind,receipt_id,requested_at,next_attempt_at) VALUES("+sqlText(id)+","+sqlText(kind)+","+sqlText(opaqueID())+","+at+","+at+");"
+			receipts += "INSERT INTO rcs_receipts(message_id,kind,receipt_id,requested_at,next_attempt_at) VALUES(" + sqlText(id) + "," + sqlText(kind) + "," + sqlText(opaqueID()) + "," + at + "," + at + ");"
 		}
 	}
 	_, err = db.run("BEGIN IMMEDIATE; INSERT INTO messages(id,conversation_id,source_key,protocol,direction,sender,body,received_at,created_at,network_message_id,cpim_message_id) VALUES("+sqlText(id)+","+sqlText(conversation)+","+sqlText("rcs:"+m.id)+",'rcs','incoming',"+sqlText(peer)+","+sqlText(string(m.body))+","+at+","+at+","+sqlText(networkID)+","+sqlText(m.id)+");"+
@@ -174,7 +174,7 @@ func (r *rcsService) runQueue(ctx context.Context, db *messageDB, session string
 		}
 		r.mu.Lock()
 		client := r.client
-		ready := r.state == "registered"
+		ready := r.readyLocked()
 		r.mu.Unlock()
 		if !ready || client == nil {
 			continue
@@ -212,6 +212,6 @@ func (r *rcsService) runQueue(ctx context.Context, db *messageDB, session string
 }
 
 func (db *messageDB) rcsAttemptFailure(attempt int64, state string) error {
-	_, err := db.run("UPDATE transport_attempts SET state="+sqlText(state)+",updated_at="+sqlText(timestamp())+" WHERE id="+strconv.FormatInt(attempt,10)+" AND state NOT IN('delivered','displayed','accepted_by_service');",false)
+	_, err := db.run("UPDATE transport_attempts SET state="+sqlText(state)+",updated_at="+sqlText(timestamp())+" WHERE id="+strconv.FormatInt(attempt, 10)+" AND state NOT IN('delivered','displayed','accepted_by_service');", false)
 	return err
 }

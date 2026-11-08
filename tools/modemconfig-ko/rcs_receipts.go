@@ -46,7 +46,7 @@ func (r *rcsService) runReceipts(ctx context.Context, db *messageDB, verify func
 		case <-ticker.C:
 		}
 		r.mu.Lock()
-		client, ready := r.client, r.state == "registered"
+		client, ready := r.client, r.readyLocked()
 		r.mu.Unlock()
 		if !ready || client == nil {
 			continue

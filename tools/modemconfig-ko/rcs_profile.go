@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type rcsProfile struct {
@@ -16,6 +17,8 @@ type rcsProfile struct {
 	discover                                                            map[string]bool
 	chat                                                                bool
 	mediaTLS                                                            bool
+	presence                                                            bool
+	capExpiry, nonRCSExpiry, publishThrottle                            time.Duration
 }
 
 func rcsField(value string) bool {
@@ -230,6 +233,35 @@ func parseRCSProfile(d *rcsDocument, fallbackPrivate, fallbackPublic string) (*r
 	if !p.chat {
 		for _, n := range rcsNodes(rcs.Children, "CHAT") {
 			p.chat = n.value("ChatAuth") == "1"
+		}
+	}
+	// TTA R9 §6.5 selects Presence with CAPDISCOVERY/defaultDisc=1.
+	p.capExpiry, p.nonRCSExpiry, p.publishThrottle = 24*time.Hour, 10*time.Minute, 25*time.Second
+	if discovery := rcs.child("CAPDISCOVERY"); discovery != nil {
+		switch discovery.value("defaultDisc") {
+		case "", "0":
+		case "1":
+			p.presence = true
+		default:
+			return nil, invalid
+		}
+		for key, destination := range map[string]*time.Duration{"capInfoExpiry": &p.capExpiry, "nonRCScapInfoExpiry": &p.nonRCSExpiry} {
+			if value := discovery.value(key); value != "" {
+				seconds, err := strconv.Atoi(value)
+				if err != nil || seconds < 0 || seconds > 30*24*3600 {
+					return nil, invalid
+				}
+				*destination = time.Duration(seconds) * time.Second
+			}
+		}
+	}
+	if presence := rcs.child("PRESENCE"); presence != nil {
+		if value := presence.value("source-throttlepublish"); value != "" {
+			seconds, err := strconv.Atoi(value)
+			if err != nil || seconds < 0 || seconds > 24*3600 {
+				return nil, invalid
+			}
+			p.publishThrottle = time.Duration(seconds) * time.Second
 		}
 	}
 	return p, nil

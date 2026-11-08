@@ -9,6 +9,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"mime"
 	"net"
 	"net/textproto"
 	"strconv"
@@ -162,11 +163,11 @@ func (r *rcsSIP) HandleRequest(ctx context.Context, req session.Request) (bool, 
 		response := sip.NewResponse(200, "OK")
 		response.Headers = sip.ResponseHeaders(req.Message, 200)
 		response.Headers.Add("Contact", r.contact)
-		response.Headers.Add("Allow", "INVITE,ACK,CANCEL,BYE,MESSAGE,OPTIONS,NOTIFY")
+		response.Headers.Add("Allow", rcsAllow)
 		return true, r.stack.WriteResponse(ctx, req, response)
 	}
 	if method == "NOTIFY" {
-		return true, r.stack.WriteStatus(ctx, req, 489, "Bad Event")
+		return true, r.handlePresence(ctx, req)
 	}
 	if method == "INVITE" {
 		if !r.profile.chat {
@@ -410,22 +411,52 @@ func parseCPIM(data []byte) (cpimMessage, error) {
 		return m, err
 	}
 	m.from, m.to = rcsURI(head.Get("From")), rcsURI(head.Get("To"))
-	m.id = head.Get("imdn.Message-ID")
 	if len(head.Values("From")) != 1 || len(head.Values("To")) != 1 || !rcsField(m.from) || !rcsField(m.to) {
 		return m, bad
 	}
+	namespaces := map[string]bool{}
+	notifications := ""
+	idSeen, dispositionSeen := false, false
 	for _, ns := range head.Values("NS") {
 		parts := strings.Fields(ns)
-		if len(parts) == 2 && parts[1] == "<urn:ietf:params:imdn>" {
-			if id := head.Get(parts[0] + ".Message-ID"); id != "" {
-				m.id = id
-			}
+		if len(parts) == 1 {
+			parts = []string{"", parts[0]}
+		}
+		if len(parts) != 2 || namespaces[strings.ToLower(parts[0])] {
+			return m, bad
+		}
+		namespaces[strings.ToLower(parts[0])] = true
+		if parts[1] != "<urn:ietf:params:imdn>" {
+			continue
+		}
+		prefix := parts[0]
+		if prefix != "" {
+			prefix += "."
+		}
+		ids, dispositions := head.Values(prefix+"Message-ID"), head.Values(prefix+"Disposition-Notification")
+		if len(ids) > 1 || len(dispositions) > 1 || len(ids) == 1 && idSeen || len(dispositions) == 1 && dispositionSeen {
+			return m, bad
+		}
+		if len(ids) == 1 {
+			m.id = ids[0]
+			idSeen = true
+		}
+		if len(dispositions) == 1 {
+			notifications = dispositions[0]
+			dispositionSeen = true
 		}
 	}
 	if !rcsField(m.id) || len(m.id) > 256 {
 		return m, bad
 	}
-	m.kind = strings.ToLower(strings.TrimSpace(strings.Split(bodyHeaders.Get("Content-Type"), ";")[0]))
+	if len(bodyHeaders.Values("Content-Type")) != 1 || len(bodyHeaders.Values("Content-Length")) > 1 {
+		return m, bad
+	}
+	kind, parameters, err := mime.ParseMediaType(bodyHeaders.Get("Content-Type"))
+	if err != nil || parameters["charset"] != "" && !strings.EqualFold(parameters["charset"], "UTF-8") {
+		return m, bad
+	}
+	m.kind = kind
 	m.body = body
 	if length := bodyHeaders.Get("Content-Length"); length != "" {
 		n, e := strconv.Atoi(length)
@@ -439,17 +470,30 @@ func parseCPIM(data []byte) (cpimMessage, error) {
 	if !utf8.Valid(body) {
 		return m, bad
 	}
-	notifications := head.Get("imdn.Disposition-Notification")
-	m.delivery = strings.Contains(notifications, "positive-delivery")
-	m.display = strings.Contains(notifications, "display")
+	for _, notification := range strings.Split(notifications, ",") {
+		switch strings.ToLower(strings.TrimSpace(notification)) {
+		case "positive-delivery":
+			m.delivery = true
+		case "display":
+			m.display = true
+		}
+	}
 	return m, nil
 }
 func makeCPIM(from, to, id, kind string, body []byte, receipt bool) []byte {
+	if kind == "message/imdn+xml" {
+		// TTA R9 §7.2.5 uses anonymous identities for delivery/read reports.
+		from, to = "sip:anonymous@anonymous.invalid", "sip:anonymous@anonymous.invalid"
+	}
 	head := fmt.Sprintf("From: <%s>\r\nTo: <%s>\r\nDateTime: %s\r\nNS: imdn <urn:ietf:params:imdn>\r\nimdn.Message-ID: %s\r\n", from, to, time.Now().UTC().Format(time.RFC3339), id)
 	if receipt {
 		head += "imdn.Disposition-Notification: positive-delivery, display\r\n"
 	}
-	return append([]byte(head+fmt.Sprintf("\r\nContent-Type: %s\r\nContent-Length: %d\r\n\r\n", kind, len(body))), body...)
+	content := "\r\nContent-Type: " + kind + "\r\n"
+	if kind == "message/imdn+xml" {
+		content += "Content-Disposition: notification\r\n"
+	}
+	return append([]byte(head+content+fmt.Sprintf("Content-Length: %d\r\n\r\n", len(body))), body...)
 }
 
 func (d *rcsDialog) receive(id, kind string, body []byte) error {
@@ -488,7 +532,7 @@ func xmlEscape(s string) string {
 	return out.String()
 }
 
-func (r *rcsSIP) capability(ctx context.Context, peer string) error {
+func (r *rcsSIP) optionsCapability(ctx context.Context, peer string) error {
 	if !r.profile.chat {
 		return errors.New("rcs-chat-disabled")
 	}
@@ -502,11 +546,17 @@ func (r *rcsSIP) capability(ctx context.Context, peer string) error {
 	routes := append([]string(nil), r.routes...)
 	r.mu.Unlock()
 	sip.ApplyRouteSet(&request, routes)
-	response, err := r.stack.Exchange(ctx, request)
+	response, err := r.exchange(ctx, request)
 	if err != nil {
 		return errors.New("rcs-capability-unavailable")
 	}
-	if response.StatusCode() != 200 || !strings.Contains(strings.Join(response.HeaderList("Contact"), ","), "rcse.im") {
+	if response.StatusCode() == 404 || response.StatusCode() == 604 {
+		return errors.New("rcs-peer-unavailable")
+	}
+	if response.StatusCode() != 200 {
+		return errors.New("rcs-capability-unavailable")
+	}
+	if !rcsContactChat(response.HeaderList("Contact")) {
 		return errors.New("rcs-peer-unavailable")
 	}
 	return nil
