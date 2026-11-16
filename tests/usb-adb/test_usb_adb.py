@@ -3,6 +3,7 @@
 import os
 from pathlib import Path
 import shlex
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -134,6 +135,74 @@ generate_mac ncm-dev
             repaired = read_identity()
             self.assertRegex(repaired[0], r'^[a-f0-9]{16}$')
             self.assertEqual(read_identity(), repaired)
+
+
+class RoleRefreshTests(unittest.TestCase):
+    def test_adb_reconnect_does_not_rebuild_the_gadget(self):
+        lua = next((shutil.which(x) for x in ('lua5.1', 'lua', 'lua5.4', 'luajit')
+                    if shutil.which(x)), None)
+        if not lua:
+            self.skipTest('Lua interpreter unavailable')
+        program = r'''
+local mode,configured,udc,starts,stops
+local values={uplink={general={}},usbgadget={usb={enabled='1'}}}
+package.preload.uci=function() return {cursor=function() return {
+    get=function(_,config,section,option)
+        local item=(values[config] or {})[section]
+        return item and item[option or '.type']
+    end,
+    changes=function() return {} end,
+    foreach=function() end,
+    close=function() end
+} end} end
+package.preload['nixio.fs']=function() return {
+    mkdirr=function() return true end,
+    dir=function(path)
+        local first=true
+        return function()
+            if path=='/sys/class/usb_role' and first then
+                first=false; return 'test-port'
+            end
+        end
+    end,
+    readfile=function(path)
+        if path=='/sys/class/usb_role/test-port/role' then return mode .. '\n' end
+        if path=='/sys/kernel/config/usb_gadget/g1/UDC' then return udc end
+    end,
+    stat=function(path,field)
+        assert(path=='/sys/kernel/config/usb_gadget/g1/configs/c.1' and field=='type')
+        return configured and 'dir' or nil
+    end,
+    writefile=function(path,value)
+        assert(path=='/sys/class/usb_role/test-port/role')
+        mode=value:match('^(%a+)'); return true
+    end
+} end
+package.preload['luci.jsonc']=function() return {} end
+os.execute=function(command)
+    if command:find('/etc/init.d/usb-gadget start',1,true) then starts=starts+1 end
+    if command:find('/etc/init.d/usb-gadget stop',1,true) then stops=stops+1 end
+    return 0
+end
+local service=dofile(arg[1])
+local function check(role,port,exists,binding,expected_starts,expected_stops)
+    values.uplink.general.usb_ethernet=role
+    mode,configured,udc,starts,stops=port,exists,binding,0,0
+    local ok,reason=service.refresh()
+    assert(ok,reason)
+    assert(starts==expected_starts,'unexpected gadget restart during ' .. port .. '/' .. role)
+    assert(stops==expected_stops,'unexpected gadget stop')
+end
+-- Both FunctionFS recovery and a net hotplug event can see UDC temporarily empty.
+check('off','device',true,'\n',0,0)
+check('off','device',true,'fake.udc\n',0,0)
+check('off','device',false,nil,1,0)
+check('off','host',true,'\n',1,0)
+check('lan','device',true,'fake.udc\n',0,1)
+'''
+        result = subprocess.run([lua, '-', str(ROOT / 'packages/a8-network/root/usr/lib/lua/a8_network.lua')],
+                                input=program, text=True, capture_output=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
 
 class GadgetTests(unittest.TestCase):

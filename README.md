@@ -77,14 +77,17 @@ Recent additions on top of the base port:
 | **`uf02`**    | `generic-uf02`    | Generic UF02 / UF2 Stick   | MSM8916 | 512 MB | 4 GB eMMC | Green / Blue / Red      |
 | **`mf800b`**  | `generic-mf800b`  | Generic MF800B 4G MiFi     | MSM8916 | 512 MB | 4 GB eMMC | Bi-colour WLAN/WAN      |
 | **`mifib-v12`** | `generic-mifib-v12` | HM-MIFIB-V12 4G LTE Dongle | MSM8916 | 512 MB | 4 GB eMMC | Bi-colour WLAN/WAN, 4-bar battery, SIM hot-swap |
-| **`mifib-v18`** | `generic-mifib-v18` | A8 (HM-MiFiB-V18), experimental | MSM8916 | 512 MB stock configuration | 4 GB eMMC | LCD; display and lamp mapping unverified |
+| **`mifib-v18`** | `generic-mifib-v18` | A8 (HM-MiFiB-V18) | MSM8916 | 512 MB stock configuration | 4 GB eMMC | 128×128 LCD and button menus, owner-tested |
 | **`uf896`**     | `generic-uf896`     | UF896 (v1.1) 4G LTE Router  | MSM8916 | 512 MB | 4 GB eMMC | Tri-colour + charger/network/wifi/data LEDs |
 | **`jz02`**      | `generic-jz02`      | JZ02 Battery MiFi (3 SIM switch lines) | MSM8916 | 512 MB | 4 GB eMMC | Network tri-colour + Wi-Fi red + battery red/green |
 
-The **A8 / HM-MiFiB-V18** target is experimental. Its stock DTB closely matches
-V12, but OpenWrt has not been booted on this unit. LCD, SD and WPS support are
-not enabled, and no verified V18 recovery image is provided. Read
-[`Docs/MIFIB_V18/README.md`](Docs/MIFIB_V18/README.md) before building or installing.
+The **A8 / HM-MiFiB-V18** owner confirmed on 2026-11-16 that the existing
+functions have been tested except voice calls. OpenWrt, the LCD and menus,
+networking and recovery have run on this unit. The newly soldered microSD
+socket is a new bring-up: this source enables SDC2, and actual card detection
+is pending the new image. Repeated USB reconnects are also being checked.
+The manual build artifact does not include this unit's private recovery image.
+See [`Docs/MIFIB_V18/README.md`](Docs/MIFIB_V18/README.md) for the current results.
 
 ### Per-board feature matrix
 
@@ -97,7 +100,7 @@ not enabled, and no verified V18 recovery image is provided. Read
 | `uf02`    |      ✅       |    ✅     |          ✅           |          ✅           |           ✅            |         ✅          |         —          |
 | `mf800b`  |      ✅       |    ✅     |          ✅           |          ✅           |           ✅            |         —           |         —          |
 | `mifib-v12` |    ✅       |    ✅     |          ✅           |          ✅           |           ✅            |         ✅          |         —          |
-| `mifib-v18` | untested | untested | untested | untested | untested | inherited, untested | untested |
+| `mifib-v18` | owner-tested | owner-tested | owner-tested | owner-tested | owner-tested | owner-tested | owner-tested |
 | `uf896` |    ✅       |    ✅     |          ✅           |          ✅           |           ✅            |         ✅          |         —          |
 | `jz02` |    —       |    ✅     |          ✅           |          ✅           |           ✅            |         ✅          |         —          |
 
@@ -115,7 +118,7 @@ not enabled, and no verified V18 recovery image is provided. Read
 | `uf02`    |           —            |      —       |         —          |      —       |
 | `mf800b`  |           ✅           |      ✅      |         ✅         |      —       |
 | `mifib-v12` |         ✅           |      ✅      |         ✅         |      ✅      |
-| `mifib-v18` | inherited, untested | untested | configured; rescue image pending | untested |
+| `mifib-v18` | owner-tested | owner-tested | installed; owner-tested | owner-tested |
 | `uf896` |         —           |      —      |         —         |      —      |
 | `jz02` |         ✅           |      ✅      |         ✅         |      —      |
 

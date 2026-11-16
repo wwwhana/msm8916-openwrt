@@ -1,10 +1,34 @@
-# A8 / HM-MiFiB-V18 — experimental port
+# A8 / HM-MiFiB-V18
 
 The AliExpress **A8** examined here is a battery-powered USB-C pocket router
 with an LCD and PCB marking **HM-MiFiB-V18**. The build target is
 `mifib-v18`, the image profile is `generic-mifib-v18`, and the first DT
 compatible is `mifib-v18,generic`. A8 is a sales name; this target does not
 cover every product sold under that name.
+
+## Current owner confirmation, 2026-11-16
+
+The owner confirms that the existing functions have been tested except voice
+calls. This includes normal boot, the LCD and buttons, networking, battery
+and charging, and the installed recovery paths. The older unverified notes
+below record earlier checkpoints, not the current owner-tested baseline.
+Voice calls remain outside the owner's completed test scope.
+
+The owner has now soldered a microSD socket onto this board. The running
+image exposed only the 4 GB eMMC and `mmc0`; its inherited DTB left SDC2
+disabled. This source enables `sdhc_2` (`mmc@7864900`) as `mmc1`, with the
+existing four-bit pin and L11/L12 supply definitions. It polls for insertion
+instead of guessing a card-detect GPIO, disables write-protect detection,
+and initially limits the socket to 3 V signalling and 50 MHz. The image adds
+the exFAT driver alongside the existing FAT support. Card detection
+and access still require the new image's device test.
+
+During this check the USB gadget's network interfaces repeatedly disappeared
+and reappeared. The network role helper could treat a temporarily unbound UDC
+during ADB recovery as a missing gadget and restart the whole gadget again.
+It now checks whether the gadget configuration exists and leaves transient
+ADB recovery to the existing reconnect watcher. Device verification of the
+new build is pending.
 
 ## Live overlay update, 2026-11-07
 
@@ -1541,7 +1565,7 @@ contains a 512 MB MTP variant with board-id `<8 0x100>`.
 | LCD | The compared MTP DTB prefers the 128×128 GC9107 through `qcom,spi-pref-prim-pan`; it also contains an ST7735S description. SPI5, GPIO11/30 reset/DC, L17/L6 supplies and the MPP4 current sink are described below. Readable pixels and runtime menus have been confirmed by the owner. |
 | Wi-Fi bands | The initial mainline description selects `qcom,wcn3620`, inherited from V12. [Linux treats WCN3620 as 2.4 GHz only](https://github.com/torvalds/linux/blob/v6.12/drivers/net/wireless/ath/wcn36xx/main.c#L1345). This is a port configuration, not a physical RF-chip identification or a measured A8 channel list. |
 | Bluetooth | The mainline DT contains the WCNSS Bluetooth device over SMD, and the image includes `btqcomsmd`, `btqca` and BlueZ. iPhone and iPad pairing and Internet access are owner-confirmed with SC disabled for initial pairing; the iPhone's saved bond also reconnects with SC restored. Optional LCD/web pairing compatibility is installed, off by default. Other clients remain unverified. |
-| SD | Eight contact pads and mounting pads below the SIM socket suggest an unpopulated microSD socket. The separate round `D0`–`D3`/`CMD`/`CLK` pads are SD/MMC test points; whether they connect to eMMC or SDC2 is unverified. Stock SDC2 is enabled with a four-bit bus, but that alone does not prove the footprint is wired or supports removable cards. Check continuity, supplies and missing passives before fitting a socket. SDC2 stays disabled here. |
+| SD | The owner fitted the microSD socket on 2026-11-16. The previous OpenWrt DTB left SDC2 disabled and exposed only eMMC. This source enables the existing four-bit SDC2 pin/supply description, polls for insertion and uses 3 V signalling up to 50 MHz. Actual card detection and access are pending installation of the new image. |
 
 After booting OpenWrt, these read-only checks can record the wireless state;
 they cannot run while the device is in EDL:
@@ -1570,7 +1594,8 @@ Patch **869** includes `msm8916-generic-mifib-v12.dts` and changes the board
 identity, L6 power policy and unverified lamp outputs. The GPIO114 SIM
 re-announce output remains. V12's status lamp nodes are removed and their pins
 are not claimed by the LED pin group. The A8 profile additionally selects
-`a8-display` for the stock SPI LCD. SDC2 remains disabled.
+`a8-display` for the stock SPI LCD. The fitted SD socket now has SDC2 enabled;
+the earlier installed images kept it disabled.
 
 V12's battery, charger, reset key, SIM selection and modem A2 hold are
 inherited. A2 hold is an initial compatibility choice, not an A8 stability

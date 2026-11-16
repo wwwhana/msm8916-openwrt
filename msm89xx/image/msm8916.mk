@@ -166,7 +166,7 @@ define Device/generic-mifib-v18
 	SUPPORTED_DEVICES := mifib-v18,generic
 	# Keep kernel messages off the small LCD used by a8-display.
 	CMDLINE := "earlycon console=ttyMSM0,115200 fbcon=font:VGA8x16 root=/dev/mmcblk0p14 rootfstype=squashfs rootwait"
-	DEVICE_PACKAGES += a8-display adbd a8-apn a8-network luci-app-bluetooth 81voltd
+	DEVICE_PACKAGES += a8-display adbd a8-apn a8-network luci-app-bluetooth 81voltd kmod-fs-exfat
 endef
 TARGET_DEVICES += generic-mifib-v18
 

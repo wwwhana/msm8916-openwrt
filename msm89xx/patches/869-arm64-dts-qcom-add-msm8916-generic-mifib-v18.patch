@@ -7,7 +7,7 @@ sink backlight. Do not drive the V12-specific status lamp pins.
 
 --- /dev/null
 +++ b/arch/arm64/boot/dts/qcom/msm8916-generic-mifib-v18.dts
-@@ -0,0 +1,134 @@
+@@ -0,0 +1,149 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * A8, PCB HM-MiFiB-V18. The closest stock MTP DTB has the same 885
@@ -21,12 +21,27 @@ sink backlight. Do not drive the V12-specific status lamp pins.
 +	model = "A8 (HM-MiFiB-V18)";
 +	compatible = "mifib-v18,generic", "qcom,msm8916";
 +
++	aliases {
++		mmc1 = &sdhc_2;
++	};
++
 +	lcd_backlight: backlight {
 +		compatible = "gpio-backlight";
 +		gpios = <&pm8916_mpps 4 GPIO_ACTIVE_HIGH>;
 +		pinctrl-names = "default";
 +		pinctrl-0 = <&lcd_backlight_default>;
 +	};
++};
++
++/* The fitted microSD socket has no verified card-detect or write-protect GPIO. */
++&sdhc_2 {
++	status = "okay";
++	bus-width = <4>;
++	broken-cd;
++	disable-wp;
++	/* Keep the first socket bring-up at 3 V signalling and SD high speed. */
++	no-1-8-v;
++	max-frequency = <50000000>;
 +};
 +
 +/* Shared 1.8 V rail: match the stock policy, not just the LCD consumer. */
