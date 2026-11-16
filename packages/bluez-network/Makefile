@@ -2,8 +2,8 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=bluez-network
-PKG_VERSION:=2020-10-25
-PKG_RELEASE:=3
+PKG_VERSION:=2020.10.25
+PKG_RELEASE:=4
 PKG_SOURCE_VERSION:=f65321736475429316f07ee94ec0deac8e46ec4a
 PKG_SOURCE:=$(PKG_SOURCE_VERSION).tar.gz
 PKG_SOURCE_URL:=https://github.com/khvzak/bluez-tools/archive/
