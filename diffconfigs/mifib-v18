@@ -1,5 +1,6 @@
 # CONFIG_BUSYBOX_CONFIG_FEATURE_TAR_GNU_EXTENSIONS is not set
 # CONFIG_TARGET_ROOTFS_EXT4FS is not set
+CONFIG_DEVEL=y
 CONFIG_CCACHE=y
 CONFIG_BUSYBOX_CONFIG_DEVMEM=y
 CONFIG_BUSYBOX_CONFIG_FBSET=y
@@ -32,7 +33,7 @@ CONFIG_PACKAGE_kmod-bonding=m
 CONFIG_PACKAGE_kmod-btmtk=m
 CONFIG_PACKAGE_kmod-btusb=m
 CONFIG_PACKAGE_kmod-fs-btrfs=m
-CONFIG_PACKAGE_kmod-fs-exfat=m
+CONFIG_PACKAGE_kmod-fs-exfat=y
 CONFIG_PACKAGE_kmod-fs-f2fs=m
 CONFIG_PACKAGE_kmod-gre=m
 CONFIG_PACKAGE_kmod-hci-uart=m
@@ -61,33 +62,33 @@ CONFIG_TARGET_PREINIT_IP="192.168.10.1"
 CONFIG_TARGET_PREINIT_NETMASK="255.255.255.0"
 CONFIG_TARGET_PREINIT_BROADCAST="192.168.10.255"
 
-# --- Optional kernel modules: built into the published feed, NOT the image ---
-# All entries use "=m" (build-only): the module is compiled and lands in the target
+# --- Additional kernel modules ---
+# Entries using "=m" are build-only: the module is compiled and lands in the target
 # package feed (and the offline kmods-msm8916 bundle) so users can install it on demand
 # with `apk add <name>`, but it is NOT baked into the firmware image.
-# Required DEVICE_PACKAGES dependencies, including the A8 USB Ethernet
-# drivers, are selected into the V18 image despite these build-only defaults.
+# Required exFAT and A8 USB Ethernet drivers explicitly use "=y" so they are
+# installed in the image. An explicit "=m" overrides DEVICE_PACKAGES defaults.
 
-# USB Ethernet adapters (LAN/WAN via a USB dongle)
-CONFIG_PACKAGE_kmod-usb-net-rtl8152=m
-CONFIG_PACKAGE_kmod-usb-net-rtl8150=m
-CONFIG_PACKAGE_kmod-usb-net-asix=m
-CONFIG_PACKAGE_kmod-usb-net-asix-ax88179=m
-CONFIG_PACKAGE_kmod-usb-net-aqc111=m
-CONFIG_PACKAGE_kmod-usb-net-cdc-ether=m
-CONFIG_PACKAGE_kmod-usb-net-cdc-ncm=m
-CONFIG_PACKAGE_kmod-usb-net-cdc-eem=m
-CONFIG_PACKAGE_kmod-usb-net-cdc-subset=m
-CONFIG_PACKAGE_kmod-usb-net-dm9601-ether=m
-CONFIG_PACKAGE_kmod-usb-net-smsc95xx=m
-CONFIG_PACKAGE_kmod-usb-net-smsc75xx=m
-CONFIG_PACKAGE_kmod-usb-net-mcs7830=m
-CONFIG_PACKAGE_kmod-usb-net-pegasus=m
-CONFIG_PACKAGE_kmod-usb-net-sr9700=m
-CONFIG_PACKAGE_kmod-usb-net-sr9800=m
-CONFIG_PACKAGE_kmod-usb-net-ch9200=m
-CONFIG_PACKAGE_kmod-usb-net-lan78xx=m
-CONFIG_PACKAGE_kmod-usb-net-rndis=m
+# USB Ethernet adapters (required in the A8 image)
+CONFIG_PACKAGE_kmod-usb-net-rtl8152=y
+CONFIG_PACKAGE_kmod-usb-net-rtl8150=y
+CONFIG_PACKAGE_kmod-usb-net-asix=y
+CONFIG_PACKAGE_kmod-usb-net-asix-ax88179=y
+CONFIG_PACKAGE_kmod-usb-net-aqc111=y
+CONFIG_PACKAGE_kmod-usb-net-cdc-ether=y
+CONFIG_PACKAGE_kmod-usb-net-cdc-ncm=y
+CONFIG_PACKAGE_kmod-usb-net-cdc-eem=y
+CONFIG_PACKAGE_kmod-usb-net-cdc-subset=y
+CONFIG_PACKAGE_kmod-usb-net-dm9601-ether=y
+CONFIG_PACKAGE_kmod-usb-net-smsc95xx=y
+CONFIG_PACKAGE_kmod-usb-net-smsc75xx=y
+CONFIG_PACKAGE_kmod-usb-net-mcs7830=y
+CONFIG_PACKAGE_kmod-usb-net-pegasus=y
+CONFIG_PACKAGE_kmod-usb-net-sr9700=y
+CONFIG_PACKAGE_kmod-usb-net-sr9800=y
+CONFIG_PACKAGE_kmod-usb-net-ch9200=y
+CONFIG_PACKAGE_kmod-usb-net-lan78xx=y
+CONFIG_PACKAGE_kmod-usb-net-rndis=y
 
 # USB cellular modems (additional WWAN devices)
 CONFIG_PACKAGE_kmod-usb-net-qmi-wwan=m
