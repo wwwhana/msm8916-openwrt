@@ -90,7 +90,7 @@ on:
         default: ""
         type: string
       skip_kernel:
-        description: "Skip the kernel tree build. Only for packages with no kernel modules (shell / JS / LuCI): it turns a ~35 min publish into ~5 min. Leave false for kmod-* and target packages."
+        description: "Skip the kernel tree build. Only for packages whose compile chain reaches no kmod: it turns a ~35 min publish into ~5 min. Leave it false for kmod-*, target packages, board packages and the LuCI apps that depend on them -- it overrides the detection below."
         required: false
         default: false
         type: boolean
@@ -111,7 +111,7 @@ concurrency:
 jobs:
   publish:
     name: ${{ inputs.package || 'Feed maintenance' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     env:
       PKG: ${{ inputs.package }}
@@ -120,7 +120,7 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -180,7 +180,7 @@ jobs:
           echo "::warning::packages/${PKG}/Makefile was bumped to PKG_RELEASE:=${NEW} in this run only. Commit it, or the next build starts from ${OLD} again."
 
       - name: Cache OpenWrt Downloads & Toolchain
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             openwrt/dl
@@ -225,12 +225,29 @@ jobs:
         run: |
           set -euo pipefail
           BASE="${{ steps.vars.outputs.base }}"
+          FULL="$(cat version)"
           git clone --depth 1 --branch gh-pages \
             "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" /tmp/gh-pages \
             || { echo "::error::Cannot clone the gh-pages branch."; exit 1; }
-          SRC="/tmp/gh-pages/releases/${BASE}"
+          # A revision-scoped publish writes to releases/${FULL} only, and that
+          # directory is where every earlier hotfix for THIS build already lives.
+          # Restoring the shared base feed (releases/${BASE}) instead drops all
+          # of them: the re-index regenerates the index from the restored tree,
+          # so a package published two hotfixes ago (e.g. msm89xx-scripts r11)
+          # falls out of the index even though its .apk file is still on disk,
+          # and devices can no longer `apk add` it (measured 2026-11-06: two
+          # sequential revision publishes left msm89xx-scripts and
+          # msm89xx-firmware-upgrade one revision behind their manifests).
+          # Restore the directory we are about to overwrite, so prior hotfixes
+          # carry through.  scope=all still restores the base feed.
+          if [ "${{ inputs.scope }}" = "revision" ]; then
+            SRC_BASE="${FULL}"
+          else
+            SRC_BASE="${BASE}"
+          fi
+          SRC="/tmp/gh-pages/releases/${SRC_BASE}"
           if [ ! -d "$SRC/packages/aarch64_generic" ]; then
-            echo "::error::No published feed at releases/${BASE} on gh-pages."
+            echo "::error::No published feed at releases/${SRC_BASE} on gh-pages."
             echo "::error::Publish a full release for this base first, or pass the right 'base'."
             exit 1
           fi
@@ -239,7 +256,7 @@ jobs:
           if [ -d "$SRC/targets/msm89xx/msm8916/packages" ]; then
             cp -a "$SRC/targets/msm89xx/msm8916/packages/." openwrt/bin/targets/msm89xx/msm8916/packages/
           fi
-          echo "Restored feed from releases/${BASE}:"
+          echo "Restored feed from releases/${SRC_BASE}:"
           for d in openwrt/bin/packages/aarch64_generic/*/; do
             printf '  %-60s %s apks\n' "$d" "$(find "$d" -maxdepth 1 -name '*.apk' | wc -l)"
           done | tee /tmp/feed-before.txt
@@ -321,6 +338,15 @@ jobs:
           # 41809560224 and 41811082178).  The board's .config is not written
           # yet at this point, so key off the path.
           if [ "$NEED" -eq 0 ] && [ -d "openwrt/package/msm8916/${PKG}" ]; then NEED=1; fi
+          # A LuCI app that depends on a board package inherits that chain:
+          # luci-app-led-setup -> msm89xx-scripts -> linux-firmware +
+          # gpio-button-hotplug, so it needs linux-<ver>/.config as well.
+          # Without this it is classified as "no kmod" and the publish dies
+          # with  No rule to make target '.../linux-6.12.112/.config'.
+          if [ "$NEED" -eq 0 ] && [ -f "packages/${PKG}/Makefile" ] &&
+             grep -qs '+msm89xx-scripts' "packages/${PKG}/Makefile"; then
+            NEED=1
+          fi
           echo "needed=$NEED" >> "$GITHUB_OUTPUT"
           echo "kernel tree needed: $NEED"
 
@@ -493,8 +519,21 @@ jobs:
                 restart: ($restart | split(" ") | map(select(length > 0))),
                 published: $date}')"
             if [ -f "$DEST/hotfix.json" ]; then
+              # Keep exactly ONE entry per package: the build just published is
+              # cumulative, so it supersedes every earlier hotfix of the same
+              # package.  Matching on id alone is not enough -- each publish gets
+              # a fresh "date-package" id, so two fixes for one package (e.g.
+              # msm89xx-scripts r9 then r14) would both stay.  A device below
+              # both then tried the older one first, and apk refused it: the feed
+              # index only carries the newest version, so the exact pin
+              # pkg=oldver was unsatisfiable and "Install fixes" failed with
+              # "breaks: world[...]".  Merge the older entries' restart services
+              # into the new one so their fixes still get activated.
               jq --argjson e "$ENTRY" --arg b "$FULL" \
-                '.build = $b | .hotfixes = ([.hotfixes[] | select(.id != $e.id)] + [$e])' \
+                '.build = $b
+                 | ([.hotfixes[] | select(.package == $e.package) | .restart[]?] | unique) as $prev
+                 | .hotfixes = ([.hotfixes[] | select(.package != $e.package)]
+                     + [ ($e + {restart: (($e.restart + $prev) | unique)}) ])' \
                 "$DEST/hotfix.json" > "$DEST/hotfix.json.new"
             else
               jq -n --argjson e "$ENTRY" --arg b "$FULL" '{build: $b, hotfixes: [$e]}' > "$DEST/hotfix.json.new"

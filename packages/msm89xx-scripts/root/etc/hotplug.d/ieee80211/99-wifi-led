@@ -25,13 +25,16 @@ fi
 # mf800b has no automatic LED indication: nothing claims its LEDs
 # except the power button handler.
 #
+# The Wi-Fi lamp is a role: /etc/config/leds maps it to a physical label and
+# 'auto' keeps the board default (blue on HMUF02-V5, green elsewhere).
+#
 case "$(cat /tmp/sysinfo/board_name 2>/dev/null)" in
 	*mf800b*) exit 0 ;;
 esac
 
-LED="/sys/class/leds/green:wlan"
-[ -d "$LED" ] || LED="/sys/class/leds/green:wan"
-[ -d "$LED" ] || exit 0
+. /usr/share/msm89xx/leds.sh
+
+LED=$(led_role_lamp wifi) || exit 0
 
 case "$ACTION" in
 	add)

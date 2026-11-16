@@ -6,8 +6,9 @@ case "${1:-}" in
 		cat <<'USAGE'
 Usage: wifi-led-monitor [--help]
 
-Drive the green WLAN LED: off when the AP interface has no client,
-on when it has one, blinking while the AP is coming up.  Started by procd
+Drive the board's Wi-Fi LED (green on the mifib-v12/mf800b, blue on the
+HMUF02-V5): off when the AP interface has no client, on when it has one,
+blinking while the AP is coming up.  Started by procd
 (/etc/init.d/wifi-led-monitor); takes no arguments.
 
 Options:
@@ -17,11 +18,22 @@ USAGE
 		;;
 esac
 
-LED="/sys/class/leds/green:wlan"
-[ -d "$LED" ] || LED="/sys/class/leds/green:wan"
+#
+# Which lamp reports Wi-Fi is a role, not a colour.  /etc/config/leds maps the
+# role to a physical label; 'auto' keeps the board default (HMUF02-V5 uses the
+# blue lamp, the other boards the green one).  A unit whose lamps are wired
+# differently is recorded with led-probe, which writes that config.
+#
+. /usr/share/msm89xx/leds.sh
+
+LED=$(led_role_lamp wifi) || LED=""
+
 # Red half of the same pair (mifib-v12, after the 2026-10-22 DT rename).
-LED_RED="/sys/class/leds/red:wlan"
-[ -d "$LED_RED" ] || LED_RED=""
+LED_RED=$(led_role_lamp wifi_fault) || LED_RED=""
+
+# Lamp name for the log lines ("green" or "blue").
+LAMP="${LED##*/}"
+LAMP="${LAMP%%:*}"
 
 #
 # The AP vif name embeds the phy index, which changes every time the driver is
@@ -44,34 +56,20 @@ ap_if()
 }
 
 POLL_INTERVAL=2
-BLINK_ON=250
-BLINK_OFF=250
-BLINK_FAST_ON=100
-BLINK_FAST_OFF=100
 
-set_green_off()
+wifi_led_off()
 {
-        [ -e "$LED/trigger" ] || return 1
-
-        echo none > "$LED/trigger" 2>/dev/null
-        echo 0 > "$LED/brightness" 2>/dev/null
+	led_apply "$LED" "$(led_role_spec wifi down)"
 }
 
-set_green_on()
+wifi_led_on()
 {
-        [ -e "$LED/trigger" ] || return 1
-
-        echo none > "$LED/trigger" 2>/dev/null
-        echo 1 > "$LED/brightness" 2>/dev/null
+	led_apply "$LED" "$(led_role_spec wifi ap_ready)"
 }
 
-set_green_blink()
+wifi_led_blink()
 {
-        [ -e "$LED/trigger" ] || return 1
-
-        echo timer > "$LED/trigger" 2>/dev/null
-        echo "$BLINK_ON" > "$LED/delay_on" 2>/dev/null
-        echo "$BLINK_OFF" > "$LED/delay_off" 2>/dev/null
+	led_apply "$LED" "$(led_role_spec wifi client)"
 }
 
 #
@@ -79,13 +77,9 @@ set_green_blink()
 # the one state where this box is a repeater, so it gets its own much faster
 # toggle, distinguishable at a glance from "a client joined the AP".
 #
-set_green_blink_fast()
+wifi_led_blink_fast()
 {
-        [ -e "$LED/trigger" ] || return 1
-
-        echo timer > "$LED/trigger" 2>/dev/null
-        echo "$BLINK_FAST_ON" > "$LED/delay_on" 2>/dev/null
-        echo "$BLINK_FAST_OFF" > "$LED/delay_off" 2>/dev/null
+	led_apply "$LED" "$(led_role_spec wifi ap_sta)"
 }
 
 #
@@ -94,23 +88,11 @@ set_green_blink_fast()
 #
 set_red()
 {
-        [ -n "$LED_RED" ] && [ -e "$LED_RED/trigger" ] || return 0
-
-        case "$1" in
-                off)
-                        echo none > "$LED_RED/trigger" 2>/dev/null
-                        echo 0 > "$LED_RED/brightness" 2>/dev/null
-                        ;;
-                on)
-                        echo none > "$LED_RED/trigger" 2>/dev/null
-                        echo 1 > "$LED_RED/brightness" 2>/dev/null
-                        ;;
-                blink)
-                        echo timer > "$LED_RED/trigger" 2>/dev/null
-                        echo 500 > "$LED_RED/delay_on" 2>/dev/null
-                        echo 500 > "$LED_RED/delay_off" 2>/dev/null
-                        ;;
-        esac
+	case "$1" in
+		off)   led_apply "$LED_RED" "$(led_role_spec wifi_fault ok)" ;;
+		on)    led_apply "$LED_RED" "$(led_role_spec wifi_fault fault)" ;;
+		blink) led_apply "$LED_RED" "$(led_role_spec wifi_fault radio_off)" ;;
+	esac
 }
 
 wifi_radio_disabled()
@@ -197,7 +179,7 @@ wifi_has_clients()
 #
 # Keep green OFF until we have confirmed that the Wi-Fi AP exists.
 #
-set_green_off
+wifi_led_off
 
 LAST=""
 
@@ -229,7 +211,7 @@ while true; do
                 case "$STATE" in
 
                         wifi-down)
-                                set_green_off
+                                wifi_led_off
 
                                 if wifi_radio_disabled; then
                                         set_red blink
@@ -238,29 +220,29 @@ while true; do
                                 else
                                         set_red on
                                         logger -t wifi-led-monitor \
-                                                "Wi-Fi AP unavailable: red ON, green OFF"
+                                                "Wi-Fi AP unavailable: red ON, $LAMP OFF"
                                 fi
                                 ;;
 
                         ap-ready)
                                 set_red off
-                                set_green_on
+                                wifi_led_on
                                 logger -t wifi-led-monitor \
-                                        "Wi-Fi AP ready, no clients: green ON"
+                                        "Wi-Fi AP ready, no clients: $LAMP ON"
                                 ;;
 
                         ap-sta)
                                 set_red off
-                                set_green_blink_fast
+                                wifi_led_blink_fast
                                 logger -t wifi-led-monitor \
-                                        "Wi-Fi AP+STA active: green FAST BLINK"
+                                        "Wi-Fi AP+STA active: $LAMP FAST BLINK"
                                 ;;
 
                         client-connected)
                                 set_red off
-                                set_green_blink
+                                wifi_led_blink
                                 logger -t wifi-led-monitor \
-                                        "Wi-Fi client connected: green BLINK"
+                                        "Wi-Fi client connected: $LAMP BLINK"
                                 ;;
 
                 esac

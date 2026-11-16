@@ -4,8 +4,9 @@ name: Board Build
 # machine" stops being the only evidence.  Opt-in per pull request with the
 # `board-build` label: one board is ~40 minutes, and most pull requests do not
 # need it.  Nothing is published and no secret is used - a pull request from a
-# fork gets a throwaway signing key and the artifact is discarded. Manual
-# dispatches retain experimental images for inspection, without a release.
+# fork gets a throwaway signing key. Pull-request images are kept as 7-day
+# artifacts, and manual test builds for 14 days. Their apk feed uses that
+# throwaway key, so `apk add` from the published feed fails.
 
 on:
   pull_request:
@@ -37,14 +38,14 @@ concurrency:
 jobs:
   pick:
     name: Pick boards
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'board-build')
     outputs:
       devices: ${{ steps.pick.outputs.devices }}
       reason: ${{ steps.pick.outputs.reason }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -100,7 +101,7 @@ jobs:
         device: ${{ fromJSON(needs.pick.outputs.devices) }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Free disk space on runner
         run: |
@@ -109,7 +110,7 @@ jobs:
 
       - name: Cache OpenWrt downloads & toolchain
         if: ${{ !inputs.bootloader_only }}
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             openwrt/dl
@@ -170,7 +171,7 @@ jobs:
 
       - name: Upload manual test build
         if: github.event_name == 'workflow_dispatch' && success()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: experimental-${{ matrix.device }}${{ inputs.bootloader_only && '-bootloader' || '' }}-${{ github.sha }}
           if-no-files-found: error
@@ -183,6 +184,31 @@ jobs:
             openwrt/bin/targets/msm89xx/msm8916/*-flash.sh
             openwrt/bin/targets/msm89xx/msm8916/*-firmware.zip
             openwrt/bin/targets/msm89xx/msm8916/*.manifest
+      # Pull-request artifacts identify the head commit being tested.
+      - name: Resolve artifact suffix
+        if: github.event_name == 'pull_request'
+        id: artifact
+        env:
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: echo "sha=${SHA:0:8}" >> "$GITHUB_OUTPUT"
+
+      # Success only: a red build has nothing worth downloading, and uploading
+      # partial output just fills the storage quota.
+      - name: Upload firmware
+        if: github.event_name == 'pull_request' && success()
+        uses: actions/upload-artifact@v6
+        with:
+          name: board-build_${{ matrix.device }}_${{ steps.artifact.outputs.sha }}
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            openwrt/bin/targets/msm89xx/msm8916/*-msm89xx-*-squashfs-gpt_both0.bin
+            openwrt/bin/targets/msm89xx/msm8916/*-msm89xx-*-squashfs-boot.img
+            openwrt/bin/targets/msm89xx/msm8916/*-msm89xx-*-squashfs-system.img
+            openwrt/bin/targets/msm89xx/msm8916/*-msm89xx-*-squashfs-sysupgrade.bin
+            openwrt/bin/targets/msm89xx/msm8916/*-msm89xx-*.manifest
+            openwrt/bin/targets/msm89xx/msm8916/*-msm89xx-*-flash.sh
+            openwrt/bin/targets/msm89xx/msm8916/*-msm89xx-*-firmware.zip
 
       - name: Report
         if: always()

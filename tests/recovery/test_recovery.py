@@ -50,7 +50,7 @@ class RecoveryTests(unittest.TestCase):
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(ROOT / relative, target)
         (self.root / 'msm89xx/image/msm8916.mk').write_text(
-            'DEVICE_DTS := msm8916-generic-mifib-v18\nDEVICE_DTS := msm8916-generic-mifib-v12\n')
+            'define Device/generic-mifib-v18\nendef\ndefine Device/generic-mifib-v12\nendef\n')
         self.modules = self.root / 'modules'
         self.modules.mkdir()
         for name in WIRELESS + LCD:
@@ -89,6 +89,7 @@ class RecoveryTests(unittest.TestCase):
         self.assertTrue(files['etc/recovery.ppm'][1].startswith(b'P6\n128 96\n255\n'))
         self.assertTrue(files['lib/firmware/mifib-v18,gc9107.bin'][1].startswith(b'MIPI DBI'))
         self.assertEqual(files['lib/firmware/board-nv'][1], b'mifib-v18')
+        self.assertEqual(files['usr/bin/dropbearkey'][1], b'../sbin/dropbear')
         self.assertEqual((self.recovery / 'irfs/init').read_bytes(), before)
         self.assertFalse((self.recovery / 'irfs/lib/modules').exists())
         self.assertFalse((self.recovery / 'irfs/lib/firmware').exists())
