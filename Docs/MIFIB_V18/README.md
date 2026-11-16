@@ -2293,7 +2293,13 @@ foreign or ambiguous recovery images.
 Run them with `python3 tests/flash-radio/test_flash_radio.py`; they require no
 device and perform no real EDL operations. They are also included in CI.
 
-## Verification record
+## Verification history
+
+These entries preserve the earlier build and device checkpoints. The
+[current owner confirmation](#current-owner-confirmation-2026-11-16) above
+supersedes their old unverified status for existing functions. The newly
+fitted SD socket and the current USB reconnect investigation are separate
+checks recorded there.
 
 | Check | Result |
 | --- | --- |

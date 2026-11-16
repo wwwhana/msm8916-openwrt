@@ -108,8 +108,9 @@ jobs:
           sudo apt-get clean
 
       - name: Cache OpenWrt downloads & toolchain
+        id: build-cache
         if: ${{ !inputs.bootloader_only }}
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: |
             openwrt/dl
@@ -188,3 +189,14 @@ jobs:
         if: always()
         run: |
           echo "Board ${{ matrix.device }}: ${{ job.status }} (${{ needs.pick.outputs.reason }})"
+
+      - name: Save completed toolchain even after a package failure
+        if: ${{ !cancelled() && !inputs.bootloader_only && steps.build-cache.outputs.cache-hit != 'true' && hashFiles('openwrt/staging_dir/toolchain-aarch64_generic_gcc-14.3.0_musl/stamp/.gcc_final_installed') != '' }}
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            openwrt/dl
+            openwrt/staging_dir/toolchain-aarch64_generic_gcc-14.3.0_musl
+            openwrt/staging_dir/host
+          key: ${{ steps.build-cache.outputs.cache-primary-key }}
