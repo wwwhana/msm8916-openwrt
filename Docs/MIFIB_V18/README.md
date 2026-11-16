@@ -6,15 +6,14 @@ with an LCD and PCB marking **HM-MiFiB-V18**. The build target is
 compatible is `mifib-v18,generic`. A8 is a sales name; this target does not
 cover every product sold under that name.
 
-## Current owner confirmation, 2026-11-16
+## Current status, 2026-11-16
 
-The owner confirms that the existing functions have been tested except voice
-calls. This includes normal boot, the LCD and buttons, networking, battery
-and charging, and the installed recovery paths. The older unverified notes
-below record earlier checkpoints, not the current owner-tested baseline.
-Voice calls remain outside the owner's completed test scope.
+All existing functions have been tested except voice calls, including normal
+boot, the LCD and buttons, networking, battery and charging, and recovery.
+The newly soldered microSD socket and USB reconnect fix are being verified
+separately. Older unverified notes below record earlier checkpoints.
 
-The owner has now soldered a microSD socket onto this board. The running
+A microSD socket has now been soldered onto this board. The running
 image exposed only the 4 GB eMMC and `mmc0`; its inherited DTB left SDC2
 disabled. This source enables `sdhc_2` (`mmc@7864900`) as `mmc1`, with the
 existing four-bit pin and L11/L12 supply definitions. It polls for insertion
@@ -2296,7 +2295,7 @@ device and perform no real EDL operations. They are also included in CI.
 ## Verification history
 
 These entries preserve the earlier build and device checkpoints. The
-[current owner confirmation](#current-owner-confirmation-2026-11-16) above
+[current status](#current-status-2026-11-16) above
 supersedes their old unverified status for existing functions. The newly
 fitted SD socket and the current USB reconnect investigation are separate
 checks recorded there.
