@@ -4,7 +4,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=a8-display
 PKG_VERSION:=1.0
-PKG_RELEASE:=22
+PKG_RELEASE:=23
 PKG_LICENSE:=GPL-2.0-only OFL-1.1
 
 include $(INCLUDE_DIR)/kernel.mk
@@ -33,7 +33,7 @@ endef
 
 define Build/Compile
 	python3 ./gen-panel.py ./files/stock-init.hex $(PKG_BUILD_DIR)/mifib-v18,gc9107.bin
-	python3 ../../msm89xx/recovery/gen-splash.py ../../msm89xx/image/lk2nd-a8/tux.h $(PKG_BUILD_DIR)/boot.ppm
+	python3 $(TOPDIR)/target/linux/msm89xx/recovery/gen-splash.py $(TOPDIR)/target/linux/msm89xx/image/lk2nd-a8/tux.h $(PKG_BUILD_DIR)/boot.ppm
 	$(TARGET_CC) $(TARGET_CFLAGS) $(TARGET_CPPFLAGS) -std=c99 -Wall -Wextra \
 		-o $(PKG_BUILD_DIR)/a8-button ./src/a8-button.c $(TARGET_LDFLAGS)
 endef

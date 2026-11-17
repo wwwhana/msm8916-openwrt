@@ -427,8 +427,8 @@ bsp_drift() {
             continue
         fi
 
-        # Fails only when the two trees differ.
-        if out="$(diff -rq "$REPO_DIR/$src" "$OPENWRT_DIR/$rel" 2>&1)"; then
+        # Compare link targets; runtime-generated destinations may not exist here.
+        if out="$(diff -rq --no-dereference "$REPO_DIR/$src" "$OPENWRT_DIR/$rel" 2>&1)"; then
             continue
         fi
 

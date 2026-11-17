@@ -158,8 +158,10 @@ function M.refresh()
             return false,'usb-role-failed'
         end
     end
-    local udc=gadget:match('^[%w_.%-]+$') and fs.readfile('/sys/kernel/config/usb_gadget/' .. gadget .. '/UDC')
-    if want=='device' and path and (mode~=want or gadget_enabled and not (udc or ''):match('%S')) and
+    -- ADB recovery briefly unbinds UDC; its watcher owns that reconnect.
+    local configured=gadget:match('^[%w_.%-]+$') and
+        fs.stat('/sys/kernel/config/usb_gadget/' .. gadget .. '/configs/c.1','type')=='dir'
+    if want=='device' and path and (mode~=want or gadget_enabled and not configured) and
        not run('/etc/init.d/usb-gadget start') then return false,'usb-start-failed' end
     if role=='lan' then
         for _,a in ipairs(adapters) do

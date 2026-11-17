@@ -109,8 +109,9 @@ jobs:
           sudo apt-get clean
 
       - name: Cache OpenWrt downloads & toolchain
+        id: build-cache
         if: ${{ !inputs.bootloader_only }}
-        uses: actions/cache@v5
+        uses: actions/cache/restore@v5
         with:
           path: |
             openwrt/dl
@@ -120,9 +121,25 @@ jobs:
           restore-keys: |
             openwrt-pr-cache-
 
+      - name: Restore A8 compiler cache
+        id: compiler-cache
+        if: ${{ !inputs.bootloader_only && matrix.device == 'mifib-v18' }}
+        uses: actions/cache/restore@v5
+        with:
+          path: openwrt/.ccache
+          key: openwrt-ccache-${{ matrix.device }}-${{ hashFiles('version') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            openwrt-ccache-${{ matrix.device }}-${{ hashFiles('version') }}-
+
       - name: Prepare OpenWrt tree
         if: ${{ !inputs.bootloader_only }}
         run: ./build.sh prepare
+
+      - name: Limit A8 compiler cache size
+        if: ${{ !inputs.bootloader_only && matrix.device == 'mifib-v18' }}
+        run: |
+          mkdir -p openwrt/.ccache
+          printf 'max_size = 2G\ncompiler_check = content\n' > openwrt/.ccache/ccache.conf
 
       - name: Build ${{ matrix.device }}
         if: ${{ !inputs.bootloader_only }}
@@ -214,3 +231,22 @@ jobs:
         if: always()
         run: |
           echo "Board ${{ matrix.device }}: ${{ job.status }} (${{ needs.pick.outputs.reason }})"
+
+      - name: Save completed toolchain even after a package failure
+        if: ${{ !cancelled() && !inputs.bootloader_only && steps.build-cache.outputs.cache-hit != 'true' && hashFiles('openwrt/staging_dir/toolchain-aarch64_generic_gcc-14.3.0_musl/stamp/.gcc_final_installed') != '' }}
+        continue-on-error: true
+        uses: actions/cache/save@v5
+        with:
+          path: |
+            openwrt/dl
+            openwrt/staging_dir/toolchain-aarch64_generic_gcc-14.3.0_musl
+            openwrt/staging_dir/host
+          key: ${{ steps.build-cache.outputs.cache-primary-key }}
+
+      - name: Save A8 compiler cache after success or failure
+        if: ${{ !cancelled() && !inputs.bootloader_only && matrix.device == 'mifib-v18' && hashFiles('openwrt/staging_dir/host/bin/ccache') != '' }}
+        continue-on-error: true
+        uses: actions/cache/save@v5
+        with:
+          path: openwrt/.ccache
+          key: ${{ steps.compiler-cache.outputs.cache-primary-key }}

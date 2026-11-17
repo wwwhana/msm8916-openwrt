@@ -1547,7 +1547,7 @@ contains a 512 MB MTP variant with board-id `<8 0x100>`.
 | LCD | The compared MTP DTB prefers the 128×128 GC9107 through `qcom,spi-pref-prim-pan`; it also contains an ST7735S description. SPI5, GPIO11/30 reset/DC, L17/L6 supplies and the MPP4 current sink are described below. Readable pixels and runtime menus have been confirmed by the owner. |
 | Wi-Fi bands | The initial mainline description selects `qcom,wcn3620`, inherited from V12. [Linux treats WCN3620 as 2.4 GHz only](https://github.com/torvalds/linux/blob/v6.12/drivers/net/wireless/ath/wcn36xx/main.c#L1345). This is a port configuration, not a physical RF-chip identification or a measured A8 channel list. |
 | Bluetooth | The mainline DT contains the WCNSS Bluetooth device over SMD, and the image includes `btqcomsmd`, `btqca` and BlueZ. iPhone and iPad pairing and Internet access are owner-confirmed with SC disabled for initial pairing; the iPhone's saved bond also reconnects with SC restored. Optional LCD/web pairing compatibility is installed, off by default. Other clients remain unverified. |
-| SD | Eight contact pads and mounting pads below the SIM socket suggest an unpopulated microSD socket. The separate round `D0`–`D3`/`CMD`/`CLK` pads are SD/MMC test points; whether they connect to eMMC or SDC2 is unverified. Stock SDC2 is enabled with a four-bit bus, but that alone does not prove the footprint is wired or supports removable cards. Check continuity, supplies and missing passives before fitting a socket. SDC2 stays disabled here. |
+| SD | The V18 device tree enables SDC2 (`mmc@7864900`) as `mmc1` with the existing four-bit pins and L11/L12 supplies. Card insertion is polled without a card-detect GPIO; write-protect detection and 1.8 V signalling are disabled, and the clock is limited to 50 MHz. FAT and exFAT drivers are included in the image. |
 
 After booting OpenWrt, these read-only checks can record the wireless state;
 they cannot run while the device is in EDL:
@@ -1576,7 +1576,8 @@ Patch **869** includes `msm8916-generic-mifib-v12.dts` and changes the board
 identity, L6 power policy and unverified lamp outputs. The GPIO114 SIM
 re-announce output remains. V12's status lamp nodes are removed and their pins
 are not claimed by the LED pin group. The A8 profile additionally selects
-`a8-display` for the stock SPI LCD. SDC2 remains disabled.
+`a8-display` for the stock SPI LCD. SDC2 is enabled as a removable four-bit
+SD interface with card polling.
 
 V12's battery, charger, reset key, SIM selection and modem A2 hold are
 inherited. A2 hold is an initial compatibility choice, not an A8 stability

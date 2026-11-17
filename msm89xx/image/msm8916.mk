@@ -166,7 +166,15 @@ define Device/generic-mifib-v18
 	SUPPORTED_DEVICES := mifib-v18,generic
 	# Keep kernel messages off the small LCD used by a8-display.
 	CMDLINE := "earlycon console=ttyMSM0,115200 fbcon=font:VGA8x16 root=/dev/mmcblk0p14 rootfstype=squashfs rootwait"
-	DEVICE_PACKAGES += a8-display adbd a8-apn a8-network luci-app-bluetooth 81voltd
+	DEVICE_PACKAGES += a8-display adbd a8-apn a8-network luci-app-bluetooth 81voltd kmod-fs-exfat
+	# Keep the adapter bundle here: selecting it from a8-network creates an MDIO dependency cycle.
+	DEVICE_PACKAGES += r8152-firmware kmod-usb-net-rtl8152 kmod-usb-net-rtl8150 \
+		kmod-usb-net-asix kmod-usb-net-asix-ax88179 kmod-usb-net-aqc111 \
+		kmod-usb-net-cdc-ether kmod-usb-net-cdc-ncm kmod-usb-net-cdc-eem \
+		kmod-usb-net-cdc-subset kmod-usb-net-dm9601-ether kmod-usb-net-smsc95xx \
+		kmod-usb-net-smsc75xx kmod-usb-net-mcs7830 kmod-usb-net-pegasus \
+		kmod-usb-net-sr9700 kmod-usb-net-sr9800 kmod-usb-net-ch9200 \
+		kmod-usb-net-lan78xx kmod-usb-net-rndis
 endef
 TARGET_DEVICES += generic-mifib-v18
 

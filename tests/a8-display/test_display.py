@@ -215,6 +215,30 @@ int main(void) {
                 rgb565.extend(((r >> 3) << 11 | (g >> 2) << 5 | b >> 3).to_bytes(2, 'big'))
         self.assertEqual(hashlib.sha256(rgb565).hexdigest(),
                          '25d6861490104827f51bc8b3fa0236dc30adab9bd0b32f6a6d0239b25423e6e9')
+
+    def test_boot_splash_builds_from_the_installed_openwrt_package(self):
+        recipe = next(line for line in (PACKAGE / 'Makefile').read_text().splitlines()
+                      if line.startswith('\t') and 'gen-splash.py' in line)
+        with tempfile.TemporaryDirectory() as tmp:
+            top = Path(tmp) / 'openwrt'
+            package = top / 'package/msm8916/a8-display'
+            bsp = top / 'target/linux/msm89xx'
+            build = top / 'build_dir/a8-display'
+            package.mkdir(parents=True)
+            build.mkdir(parents=True)
+            for path in ('recovery/gen-splash.py', 'image/lk2nd-a8/tux.h'):
+                destination = bsp / path
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(ROOT / 'msm89xx' / path, destination)
+            makefile = package / 'splash.mk'
+            makefile.write_text(f'TOPDIR:={top}\nPKG_BUILD_DIR:={build}\nall:\n{recipe}\n')
+            result = subprocess.run(['make', '-f', str(makefile)], cwd=package,
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            image = (build / 'boot.ppm').read_bytes()
+            self.assertTrue(image.startswith(b'P6\n128 96\n255\n'))
+            self.assertEqual(len(image), len(b'P6\n128 96\n255\n') + 128 * 96 * 3)
+
     def test_linux_boot_splash_uses_recovery_renderer_before_menu(self):
         source = (PACKAGE / 'files/a8-display').read_text()
         function = source[source.index('show_boot_splash()'):source.index('read_value()')]
