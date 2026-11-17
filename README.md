@@ -77,15 +77,14 @@ Recent additions on top of the base port:
 | **`uf02`**    | `generic-uf02`    | Generic UF02 / UF2 Stick   | MSM8916 | 512 MB | 4 GB eMMC | Green / Blue / Red      |
 | **`mf800b`**  | `generic-mf800b`  | Generic MF800B 4G MiFi     | MSM8916 | 512 MB | 4 GB eMMC | Bi-colour WLAN/WAN      |
 | **`mifib-v12`** | `generic-mifib-v12` | HM-MIFIB-V12 4G LTE Dongle | MSM8916 | 512 MB | 4 GB eMMC | Bi-colour WLAN/WAN, 4-bar battery, SIM hot-swap |
-| **`mifib-v18`** | `generic-mifib-v18` | A8 (HM-MiFiB-V18), experimental | MSM8916 | 512 MB stock configuration | 4 GB eMMC | LCD; display and lamp mapping unverified |
+| **`mifib-v18`** | `generic-mifib-v18` | A8 (HM-MiFiB-V18) | MSM8916 | 512 MB | 4 GB eMMC | 128×128 LCD and button menus |
 | **`uf896`**     | `generic-uf896`     | UF896 (v1.1) 4G LTE Router  | MSM8916 | 512 MB | 4 GB eMMC | Tri-colour + charger/network/wifi/data LEDs |
 | **`jz02`**      | `generic-jz02`      | JZ02 Battery MiFi (3 SIM switch lines) | MSM8916 | 512 MB | 4 GB eMMC | Network tri-colour + Wi-Fi red + battery red/green |
 | **`jz0145`**    | `generic-jz0145`    | JZ0145 V33 Stick | MSM8916 | 512 MB | 4 GB eMMC | Green / Blue / Red |
 
-The **A8 / HM-MiFiB-V18** target is experimental. Its stock DTB closely matches
-V12, but OpenWrt has not been booted on this unit. LCD, SD and WPS support are
-not enabled, and no verified V18 recovery image is provided. Read
-[`Docs/MIFIB_V18/README.md`](Docs/MIFIB_V18/README.md) before building or installing.
+The **A8 / HM-MiFiB-V18** has been tested with all existing functions except
+voice calls. See [`Docs/MIFIB_V18/README.md`](Docs/MIFIB_V18/README.md)
+for supported features and configuration.
 
 ### Per-board feature matrix
 
@@ -98,7 +97,7 @@ not enabled, and no verified V18 recovery image is provided. Read
 | `uf02`    |      ✅       |    ✅     |          ✅           |          ✅           |           ✅            |         ✅          |         —          |
 | `mf800b`  |      ✅       |    ✅     |          ✅           |          ✅           |           ✅            |         —           |         —          |
 | `mifib-v12` |    ✅       |    ✅     |          ✅           |          ✅           |           ✅            |         ✅          |         —          |
-| `mifib-v18` | untested | untested | untested | untested | untested | inherited, untested | untested |
+| `mifib-v18` |    ✅       |    ✅     |          ✅           |          ✅           |           ✅            |         ✅          |         ✅          |
 | `uf896` |    ✅       |    ✅     |          ✅           |          ✅           |           ✅            |         ✅          |         —          |
 | `jz02` |    —       |    ✅     |          ✅           |          ✅           |           ✅            |         ✅          |         —          |
 | `jz0145` |    ✅    |    ✅    |          ✅           |          ✅           |           ✅            |         ✅          |         —          |
@@ -117,7 +116,7 @@ not enabled, and no verified V18 recovery image is provided. Read
 | `uf02`    |           —            |      —       |         —          |      —       |
 | `mf800b`  |           ✅           |      ✅      |         ✅         |      —       |
 | `mifib-v12` |         ✅           |      ✅      |         ✅         |      ✅      |
-| `mifib-v18` | inherited, untested | untested | configured; rescue image pending | untested |
+| `mifib-v18` |         ✅           |      ✅      |         ✅         |      ✅      |
 | `uf896` |         —           |      —      |         —         |      —      |
 | `jz02` |         ✅           |      ✅      |         ✅         |      —      |
 | `jz0145` |       —            |      —       |         ✅         |      —      |
@@ -125,9 +124,9 @@ not enabled, and no verified V18 recovery image is provided. Read
 * **Recovery partition** — the 17-partition layout (`misc` + `recovery`).  A `—` means the board keeps the 15-partition layout; see [`Docs/RECOVERY/`](Docs/RECOVERY/).
 * **3-SIM selection** — the JZ02 has three SIM switch lines (GPIO 1 / 22 / 23) but only the external slot (3) is accessible on the tested unit; the `sim-select` init script picks the slot from `uci sim.slot` (default 3). It is not automatic hot-swap.
 * **Power button** — mifib-v12, mf800b and jz02 have a `pm8941_pwrkey`; see [`Docs/POWER_BUTTON.md`](Docs/POWER_BUTTON.md).
-* **SIM hot-swap** — the `sim-hotplug` service ships and is enabled on **every** board.  The table marks where the `sim_hotplug` line has been **confirmed**: HMUF02-V5 (verified end-to-end, ~15 s) and mifib-v12 (same modem family, enabled, not yet soaked).  A `—` means the line is untested on that board, not that the service is missing — see [`Docs/SIM_HOT_SWAP.md`](Docs/SIM_HOT_SWAP.md).
+* **SIM hot-swap** — the `sim-hotplug` service ships and is enabled on **every** board.  The table marks where the `sim_hotplug` line has been **confirmed**: HMUF02-V5 (verified end-to-end, ~15 s), mifib-v12 (same modem family, enabled, not yet soaked), and A8 (verified).  A `—` means the line is untested on that board, not that the service is missing — see [`Docs/SIM_HOT_SWAP.md`](Docs/SIM_HOT_SWAP.md).
 
-> The Wi-Fi/PMIC cooling maps are in the **shared `msm8916-ufi.dtsi`** (patch 861), which every board in the target includes, so all boards get them. The `a2_pin` modem-rail hold is enabled on the **HMUF02-V5, UZ801, UF02, HM-MIFIB-V12, JZ02 and UFI003** boards — the first four carry the same HiMI baseband family (`HIMI_U01_MODEM_V1.0`) exposed to the `a2_power.c:1189` quiesce wedge, the JZ02 (`M8936FAAAANUZM`) hit the same SSR loop (`modem pc-ack timeout during resume`), and UFI003's board DTS sets `qcom,a2-pin` on `&bam_dmux`; `UFI001B` (modem `MPSS.DPM.2.0.2`, V2.0) and `MF800B` do not set it, and **UF896 does not need it** (field-tested on real hardware — no `a2_power.c:1189` quiesce wedge was observed). Everything else applies to every board. Failsafe mode is enabled on **every board except the JZ02**, whose reset pinhole is not software-visible (hardware test: no GPIO, PMIC-GPIO or power-key event), so it has no button-triggered rescue mode; failsafe has been **live-verified on the HMUF02-V5 and JZ0145**.
+> The Wi-Fi/PMIC cooling maps are in the **shared `msm8916-ufi.dtsi`** (patch 861), which every board in the target includes, so all boards get them. The `a2_pin` modem-rail hold is enabled on the **HMUF02-V5, UZ801, UF02, HM-MIFIB-V12, JZ02 and UFI003** boards — the first four carry the same HiMI baseband family (`HIMI_U01_MODEM_V1.0`) exposed to the `a2_power.c:1189` quiesce wedge, the JZ02 (`M8936FAAAANUZM`) hit the same SSR loop (`modem pc-ack timeout during resume`), and UFI003's board DTS sets `qcom,a2-pin` on `&bam_dmux`; `UFI001B` (modem `MPSS.DPM.2.0.2`, V2.0) and `MF800B` do not set it, and **UF896 does not need it** (field-tested on real hardware — no `a2_power.c:1189` quiesce wedge was observed). Everything else applies to every board. Failsafe mode is enabled on **every board except the JZ02**, whose reset pinhole is not software-visible (hardware test: no GPIO, PMIC-GPIO or power-key event), so it has no button-triggered rescue mode; failsafe has been **live-verified on the HMUF02-V5, JZ0145 and A8**.
 
 ### 🛠️ Adding a new board
 

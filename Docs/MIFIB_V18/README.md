@@ -1,10 +1,16 @@
-# A8 / HM-MiFiB-V18 — experimental port
+# A8 / HM-MiFiB-V18
 
 The AliExpress **A8** examined here is a battery-powered USB-C pocket router
 with an LCD and PCB marking **HM-MiFiB-V18**. The build target is
 `mifib-v18`, the image profile is `generic-mifib-v18`, and the first DT
 compatible is `mifib-v18,generic`. A8 is a sales name; this target does not
 cover every product sold under that name.
+
+## Current status, 2026-11-16
+
+All existing functions have been tested except voice calls, including normal
+boot, the LCD and buttons, networking, battery and charging, and recovery.
+Older unverified notes below record earlier checkpoints.
 
 ## Live overlay update, 2026-11-07
 
@@ -2268,7 +2274,10 @@ foreign or ambiguous recovery images.
 Run them with `python3 tests/flash-radio/test_flash_radio.py`; they require no
 device and perform no real EDL operations. They are also included in CI.
 
-## Verification record
+## Verification history
+
+These entries preserve earlier checkpoints. The [current status](#current-status-2026-11-16)
+above supersedes their old unverified status for existing functions.
 
 | Check | Result |
 | --- | --- |
