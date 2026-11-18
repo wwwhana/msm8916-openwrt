@@ -216,6 +216,53 @@ int main(void) {
         self.assertEqual(hashlib.sha256(rgb565).hexdigest(),
                          '25d6861490104827f51bc8b3fa0236dc30adab9bd0b32f6a6d0239b25423e6e9')
 
+    def test_recovery_stages_each_boards_panel_and_display_modules(self):
+        source = (ROOT / 'build-recovery.sh').read_text()
+        functions = source[source.index('install_modules() {'):source.index('# Pack:')]
+        assignments = '\n'.join(line for line in source.splitlines()
+                                if line.startswith(('RECOVERY_MODULES=', 'RECOVERY_LCD_MODULES=')))
+        for board, init, firmware in (
+                ('mifib-v18', 'stock-init.hex', 'mifib-v18,gc9107.bin'),
+                ('jz08c-v50', 'jz08c-v50-stock-init.hex', 'jz08c-v50,st7735s.bin'),
+                ('jz02', None, None)):
+            with self.subTest(board=board), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                irfs, modules = root / 'irfs', root / 'modules'
+                for path in (irfs / 'lib/firmware', irfs / 'usr/sbin', irfs / 'etc', modules):
+                    path.mkdir(parents=True)
+                shutil.copyfile(ROOT / 'msm89xx/recovery/irfs/usr/sbin/recovery-display',
+                                irfs / 'usr/sbin/recovery-display')
+                for name in ('mdt_loader', 'qcom_common', 'qcom_pil_info', 'qcom_wcnss_pil',
+                             'compat', 'cfg80211', 'mac80211', 'wcn36xx', 'gpio_backlight',
+                             'drm_panel_orientation_quirks', 'drm', 'drm_kms_helper',
+                             'drm_dma_helper', 'drm_mipi_dbi', 'panel-mipi-dbi'):
+                    (modules / (name + '.ko')).write_bytes(name.encode())
+                script = ('set -e\n' + assignments + '\n'
+                          'msg() { :; }\ndie() { echo "$*" >&2; exit 1; }\n'
+                          'module_dir() { echo "$TEST_MODULES"; }\n'
+                          'module_version() { echo test; }\n' + functions +
+                          '\ninstall_modules "$BOARD"\ninstall_display "$BOARD"\n')
+                subprocess.run(['bash', '-c', script], check=True,
+                               env=dict(os.environ, BOARD=board, IRFS=str(irfs),
+                                        REPO_DIR=str(ROOT), RECOVERY_DIR=str(ROOT / 'msm89xx/recovery'),
+                                        TEST_MODULES=str(modules)))
+                packed = irfs / 'lib/modules/test/panel-mipi-dbi.ko'
+                self.assertEqual(packed.exists(), firmware is not None)
+                if firmware:
+                    self.assertEqual((irfs / 'lib/firmware' / firmware).read_bytes(),
+                                     panel.convert(bytes.fromhex((PACKAGE / 'files' / init).read_text())))
+                    self.assertTrue((irfs / 'etc/recovery.ppm').exists())
+                else:
+                    self.assertEqual(list((irfs / 'lib/firmware').iterdir()), [])
+
+    def test_private_recovery_blobs_cannot_be_reused_for_all_boards(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = subprocess.run(['bash', str(ROOT / 'build-recovery.sh'), 'all'],
+                                    capture_output=True, text=True,
+                                    env=dict(os.environ, RECOVERY_BLOBS_DIR=tmp))
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('belongs to one board', result.stdout + result.stderr)
+
     def test_boot_splash_builds_from_the_installed_openwrt_package(self):
         recipe = next(line for line in (PACKAGE / 'Makefile').read_text().splitlines()
                       if line.startswith('\t') and 'gen-splash.py' in line)
@@ -530,9 +577,11 @@ int main(void) {
     def test_display_package_can_be_selected(self):
         # OpenWrt propagates the DRM packages' @DISPLAY_SUPPORT dependency
         # to a8-display, removing it entirely when this option is missing.
-        config = (ROOT / 'diffconfigs/mifib-v18').read_text().splitlines()
-        self.assertIn('CONFIG_DISPLAY_SUPPORT=y', config)
-        self.assertIn('CONFIG_BUSYBOX_CONFIG_FBSPLASH=y', config)
+        for board in ('mifib-v18', 'jz08c-v50'):
+            with self.subTest(board=board):
+                config = (ROOT / 'diffconfigs' / board).read_text().splitlines()
+                self.assertIn('CONFIG_DISPLAY_SUPPORT=y', config)
+                self.assertIn('CONFIG_BUSYBOX_CONFIG_FBSPLASH=y', config)
 
     def test_stock_sequence(self):
         stock = bytes.fromhex((PACKAGE / "files/stock-init.hex").read_text())
@@ -548,6 +597,16 @@ int main(void) {
     def test_parameters_and_post_command_delays(self):
         self.assertEqual(panel.convert(bytes.fromhex("0003b00102320129"))[16:],
                          bytes.fromhex("b00201022900000132"))
+
+    def test_jz08c_stock_sequence(self):
+        stock = bytes.fromhex((PACKAGE / 'files/jz08c-v50-stock-init.hex').read_text())
+        # Anchored to the preferred ST7735S property in the stock boot DTB.
+        self.assertEqual(hashlib.sha256(stock).hexdigest(),
+                         '5c229b075bf4b541ca526ae1c9eabf487da3643b32e74aed2cbf06ab64952de3')
+        firmware = panel.convert(stock)
+        self.assertEqual(firmware[16:21], bytes.fromhex('1100000178'))
+        self.assertIn(bytes.fromhex('2a04000200812b0400030082'), firmware)
+        self.assertEqual(firmware[-4:], bytes.fromhex('29002c00'))
 
     def test_malformed_records_are_rejected(self):
         for bad in (b"", b"\x00", b"\x00\x00", b"\x00\x02\x11", b"\x00\x01\x00"):

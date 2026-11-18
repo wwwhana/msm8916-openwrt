@@ -3,7 +3,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=a8-image
 PKG_VERSION:=1.0
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 PKG_LICENSE:=GPL-2.0-only BSD-3-Clause
 PKG_BUILD_DEPENDS:=golang/host
 PKG_BUILD_PARALLEL:=1
@@ -17,7 +17,7 @@ include $(TOPDIR)/feeds/packages/lang/golang/golang-package.mk
 define Package/a8-image
   SECTION:=utils
   CATEGORY:=Utilities
-  TITLE:=A8 LCD message image previews
+  TITLE:=MiFi LCD message image previews
   DEPENDS:=$(GO_ARCH_DEPENDS)
 endef
 

@@ -1,9 +1,9 @@
 # Recovery: the rescue image and the recovery partition
 
-The experimental **A8 / HM-MiFiB-V18** profile also reserves `misc` and
-`recovery`, but has no verified rescue image yet. Build it from V18's own
-production kernel, matching modules and calibration; do not reuse a V12
-frozen image. See [the V18 installation constraints](../MIFIB_V18/README.md#installation-and-recovery-constraints).
+The LCD profiles **A8 / HM-MiFiB-V18** and **JZ08C V50 / MF800-E** also reserve
+`misc` and `recovery`. Build each rescue image from its own production kernel,
+matching modules and calibration. See [the V18 installation constraints](../MIFIB_V18/README.md#installation-and-recovery-constraints)
+and [the JZ08C V50 build and validation notes](../JZ08C_V50/README.md#build-and-validation).
 
 There are **two** separate rescue mechanisms on these sticks, and they are easy
 to confuse:
@@ -40,9 +40,9 @@ partition number up to `p14` keeps its offset, so a stick that already runs
 OpenWrt does not need its boot/rootfs moved.
 
 Boards built with this layout today: **hmuf02v5**, **mf800b**, **mifib-v12**,
-**jz02**, and **jz0145**. The other five keep the 15-partition layout (no
-`misc`, no `recovery`) — the LuCI entry hides itself there and the failover
-stays inert.
+**mifib-v18**, **jz02**, **jz08c-v50**, and **jz0145**. Profiles without
+`GPT_RECOVERY` keep the 15-partition layout (no `misc`, no `recovery`) — the
+LuCI entry hides itself there and the failover stays inert.
 
 ---
 

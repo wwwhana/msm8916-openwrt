@@ -72,7 +72,7 @@ return view.extend({
         if (signature !== this.lastDevices) {
             this.lastDevices = signature;
             this.route.replaceChildren.apply(this.route,[E('option',{value:'browser'},'브라우저 마이크·스피커')].concat(devices.map(function(device) {
-                return E('option',{value:'bluetooth:'+device.id},'A8 블루투스 · '+device.label);
+                return E('option',{value:'bluetooth:'+device.id},'기기 블루투스 · '+device.label);
             })));
             this.route.value = this.state.route;
         }
@@ -93,7 +93,7 @@ return view.extend({
         this.microphoneLevel.value=microphone.level;
         this.microphoneLevel.hidden=this.microphoneHint.hidden=!(screen.active && !screen.incoming || this.state.microphoneTesting || this.state.microphoneTest);
         this.microphoneHint.textContent=microphone.hint;
-        this.audio.textContent = call.audio === 'bluetooth' ? 'A8 블루투스 헤드셋' : '브라우저 마이크·스피커';
+        this.audio.textContent = call.audio === 'bluetooth' ? '기기 블루투스 헤드셋' : '브라우저 마이크·스피커';
         this.audio.hidden = !screen.active || screen.incoming;
         this.answer.hidden = !screen.incoming || screen.locked;
         this.answer.disabled = this.state.pending || this.state.microphoneTesting || !permitted;

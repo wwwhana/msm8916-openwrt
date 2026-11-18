@@ -78,7 +78,7 @@ function M.draw(status,now,state)
     local rat,carrier,bars=(status[4] or ''):match('^(%S+)%s+(.-)%s+([|%-]+)%s*$')
     if not bars or #bars~=5 then
         rat=(status[4] or ''):find('SIM NONE',1,true) and 'NO SIM' or 'WAIT'
-        carrier='A8'; bars=nil
+        carrier='OpenWrt'; bars=nil
     end
     local battery=status.battery
     local cap=battery and counter(battery.capacity)
@@ -249,7 +249,7 @@ function M.draw(status,now,state)
                 buttons('CANCEL','CONFIRM',89); hint()
             elseif state.page=='message' then
                 card(4,29,120,76)
-                center(64,36,'A8',blue,2)
+                center(64,36,'OpenWrt',blue,2)
                 local value=tostring(state.message or ''):gsub('[^ -~]','?')
                 for i=1,3 do center(64,60+(i-1)*12,value:sub((i-1)*19+1,i*19),ink) end
                 center(64,117,'PRESS TO RETURN',muted)
@@ -292,7 +292,7 @@ function M.draw(status,now,state)
         end
         return 'P6\n128 128\n255\n'..table.concat(pixels)
     end
-    text(5,17,'A8 MOBILE',ink)
+    text(5,17,'OpenWrt',ink)
     text(91,17,battery and battery.charging and 'CHG' or '',green)
     card(4,28,58,65); card(66,28,58,65)
     center(33,32,'LTE DATA',muted); center(95,32,'SIGNAL',muted)

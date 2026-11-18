@@ -1,0 +1,286 @@
+From: OpenWrt MSM8916 Maintainers
+Subject: [PATCH] arm64: dts: qcom: add JZ08C V50 (MF800-E)
+
+Describe the stock SPI4 ST7735S panel, SIM selectors, keys and PM8916
+4.2 V charging limits. Enable SDHC2 for an optional microSD socket.
+
+--- /dev/null
++++ b/arch/arm64/boot/dts/qcom/msm8916-generic-jz08c-v50.dts
+@@ -0,0 +1,277 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/* JZ08C_V50_20250930, sold as MF800-E. Pins follow the stock MTP DTB. */
++/dts-v1/;
++#include "msm8916-ufi.dtsi"
++#include <dt-bindings/pinctrl/qcom,pmic-mpp.h>
++
++/ {
++	model = "JZ08C V50 (MF800-E)";
++	compatible = "jz08c-v50,generic", "qcom,msm8916";
++
++	aliases {
++		mmc1 = &sdhc_2;
++	};
++
++	battery: battery {
++		compatible = "simple-battery";
++		device-chemistry = "lithium-ion";
++		/* Preserve stock 4.2 V limits; the fitted pack capacity is unknown. */
++		voltage-min-design-microvolt = <3400000>;
++		voltage-max-design-microvolt = <4200000>;
++		constant-charge-voltage-max-microvolt = <4200000>;
++		constant-charge-current-max-microamp = <1440000>;
++		charge-term-current-microamp = <100000>;
++		factory-internal-resistance-micro-ohms = <210000>;
++		ocv-capacity-celsius = <(-20) 0 25 40 60>;
++
++		/* Stock OCV curve, -20 C; mV converted to microvolts. */
++		ocv-capacity-table-0 =
++			<4175000 100>, <4097000 95>, <4039000 90>, <3963000 85>,
++			<3920000 80>, <3887000 75>, <3856000 70>, <3830000 65>,
++			<3808000 60>, <3793000 55>, <3779000 50>, <3768000 45>,
++			<3757000 40>, <3746000 35>, <3734000 30>, <3722000 25>,
++			<3707000 20>, <3693000 16>, <3678000 13>, <3664000 11>,
++			<3656000 10>, <3646000 9>, <3634000 8>, <3618000 7>,
++			<3599000 6>, <3573000 5>, <3541000 4>, <3496000 3>,
++			<3428000 2>, <3312000 1>, <3000000 0>;
++
++		/* Stock OCV curve, 0 C; mV converted to microvolts. */
++		ocv-capacity-table-1 =
++			<4173000 100>, <4111000 95>, <4075000 90>, <4017000 85>,
++			<3969000 80>, <3932000 75>, <3898000 70>, <3868000 65>,
++			<3843000 60>, <3821000 55>, <3803000 50>, <3788000 45>,
++			<3779000 40>, <3771000 35>, <3762000 30>, <3747000 25>,
++			<3721000 20>, <3705000 16>, <3698000 13>, <3693000 11>,
++			<3690000 10>, <3687000 9>, <3683000 8>, <3677000 7>,
++			<3667000 6>, <3645000 5>, <3607000 4>, <3550000 3>,
++			<3469000 2>, <3342000 1>, <3000000 0>;
++
++		/* Stock OCV curve, 25 C; mV converted to microvolts. */
++		ocv-capacity-table-2 =
++			<4167000 100>, <4112000 95>, <4072000 90>, <4025000 85>,
++			<3984000 80>, <3957000 75>, <3929000 70>, <3900000 65>,
++			<3858000 60>, <3827000 55>, <3807000 50>, <3792000 45>,
++			<3780000 40>, <3772000 35>, <3765000 30>, <3753000 25>,
++			<3731000 20>, <3704000 16>, <3687000 13>, <3683000 11>,
++			<3682000 10>, <3681000 9>, <3680000 8>, <3676000 7>,
++			<3667000 6>, <3638000 5>, <3591000 4>, <3528000 3>,
++			<3445000 2>, <3308000 1>, <3000000 0>;
++
++		/* Stock OCV curve, 40 C; mV converted to microvolts. */
++		ocv-capacity-table-3 =
++			<4162000 100>, <4110000 95>, <4068000 90>, <4026000 85>,
++			<3989000 80>, <3958000 75>, <3928000 70>, <3901000 65>,
++			<3863000 60>, <3827000 55>, <3808000 50>, <3793000 45>,
++			<3780000 40>, <3768000 35>, <3759000 30>, <3744000 25>,
++			<3722000 20>, <3696000 16>, <3678000 13>, <3676000 11>,
++			<3675000 10>, <3674000 9>, <3672000 8>, <3668000 7>,
++			<3655000 6>, <3623000 5>, <3575000 4>, <3511000 3>,
++			<3423000 2>, <3280000 1>, <3000000 0>;
++
++		/* Stock OCV curve, 60 C; mV converted to microvolts. */
++		ocv-capacity-table-4 =
++			<4157000 100>, <4107000 95>, <4064000 90>, <4025000 85>,
++			<3988000 80>, <3955000 75>, <3925000 70>, <3898000 65>,
++			<3862000 60>, <3827000 55>, <3807000 50>, <3792000 45>,
++			<3779000 40>, <3768000 35>, <3749000 30>, <3730000 25>,
++			<3709000 20>, <3683000 16>, <3667000 13>, <3665000 11>,
++			<3664000 10>, <3662000 9>, <3661000 8>, <3656000 7>,
++			<3639000 6>, <3603000 5>, <3554000 4>, <3490000 3>,
++			<3400000 2>, <3250000 1>, <3000000 0>;
++	};
++
++	lcd_backlight: backlight {
++		compatible = "gpio-backlight";
++		gpios = <&pm8916_mpps 4 GPIO_ACTIVE_HIGH>;
++		pinctrl-names = "default";
++		pinctrl-0 = <&lcd_backlight_default>;
++	};
++};
++
++&reserved_memory {
++	ramoops@8db00000 {
++		compatible = "ramoops";
++		reg = <0x0 0x8db00000 0x0 0x00100000>;
++		record-size = <0x00040000>;
++		console-size = <0x00040000>;
++		pmsg-size = <0x00040000>;
++		ecc-size = <16>;
++	};
++};
++
++/* The stock LED class contains SIM control lines only, not status lamps. */
++&{/leds} {
++	/delete-node/ led-r;
++	/delete-node/ led-g;
++	/delete-node/ led-b;
++
++	sim1-switch {
++		label = "sim1_switch_gpio";
++		gpios = <&tlmm 22 GPIO_ACTIVE_HIGH>;
++		default-state = "off";
++		retain-state-suspended;
++	};
++	sim2-switch {
++		label = "sim2_switch_gpio";
++		gpios = <&tlmm 23 GPIO_ACTIVE_HIGH>;
++		default-state = "off";
++		retain-state-suspended;
++	};
++	sim3-switch {
++		label = "sim3_switch_gpio";
++		gpios = <&tlmm 1 GPIO_ACTIVE_HIGH>;
++		default-state = "on";
++		retain-state-suspended;
++	};
++	sim-hotdet {
++		label = "sim_hotdet_gpio";
++		gpios = <&tlmm 20 GPIO_ACTIVE_HIGH>;
++		default-state = "off";
++		retain-state-suspended;
++	};
++};
++
++/* The accessible side button reports PMIC KEY_POWER. Other keys are hidden
++ * or unpopulated on this PCB, so do not expose them as menu navigation. */
++&{/gpio-keys} {
++	status = "disabled";
++};
++
++&button_restart {
++	gpios = <&tlmm 107 GPIO_ACTIVE_LOW>;
++};
++
++&pm8916_usbin {
++	status = "disabled";
++};
++
++/* Optional socket: poll for cards without assuming CD or WP wiring. */
++&sdhc_2 {
++	status = "okay";
++	bus-width = <4>;
++	broken-cd;
++	disable-wp;
++	no-1-8-v;
++	max-frequency = <25000000>;
++};
++
++&pm8916_charger {
++	monitored-battery = <&battery>;
++	qcom,fast-charge-safe-voltage = <4200000>;
++	qcom,fast-charge-safe-current = <1440000>;
++	status = "okay";
++};
++
++&pm8916_bms {
++	monitored-battery = <&battery>;
++	power-supplies = <&pm8916_charger>;
++	status = "okay";
++};
++
++&usb {
++	dr_mode = "peripheral";
++	extcon = <&pm8916_charger>;
++};
++
++&usb_hs_phy {
++	extcon = <&pm8916_charger>;
++};
++
++&pm8916_l6 {
++	regulator-boot-on;
++	regulator-always-on;
++};
++
++&pm8916_rpm_regulators {
++	pm8916_l17: l17 {
++		regulator-min-microvolt = <2850000>;
++		regulator-max-microvolt = <2850000>;
++	};
++};
++
++/* Stock QUP4: GPIO12/13/15 plus CS GPIO14, 16 MHz. */
++&blsp_spi4 {
++	status = "okay";
++	pinctrl-names = "default", "sleep";
++	pinctrl-0 = <&lcd_spi_default &lcd_cs_default>;
++	pinctrl-1 = <&lcd_spi_sleep>;
++
++	display@0 {
++		compatible = "jz08c-v50,st7735s", "panel-mipi-dbi-spi";
++		reg = <0>;
++		spi-max-frequency = <16000000>;
++		/* DBI reset finishes at logical 1, releasing the active-low wire. */
++		reset-gpios = <&tlmm 118 GPIO_ACTIVE_HIGH>;
++		dc-gpios = <&tlmm 116 GPIO_ACTIVE_HIGH>;
++		pinctrl-names = "default";
++		pinctrl-0 = <&lcd_control_default>;
++		power-supply = <&pm8916_l17>;
++		io-supply = <&pm8916_l6>;
++		backlight = <&lcd_backlight>;
++		write-only;
++		format = "r5g6b5";
++		width-mm = <26>;
++		height-mm = <26>;
++		panel-timing {
++			clock-frequency = <0>;
++			hactive = <128>;
++			vactive = <128>;
++			/* Stock ST7735S window: columns 2..129, rows 3..130. */
++			hback-porch = <2>;
++			vback-porch = <3>;
++			hfront-porch = <0>;
++			hsync-len = <0>;
++			vfront-porch = <0>;
++			vsync-len = <0>;
++		};
++	};
++};
++
++&pm8916_mpps {
++	lcd_backlight_default: lcd-backlight-state {
++		pins = "mpp4";
++		function = "sink";
++		power-source = <PM8916_MPP_VPH>;
++		/* Raw Linux 6.12 sink code: 7 = stock 40 mA. */
++		drive-strength = <7>;
++		output-low;
++	};
++};
++
++&tlmm {
++	gpio_leds_default: gpio-leds-default-state {
++		pins = "gpio1", "gpio20", "gpio22", "gpio23";
++	};
++	button_default: button-default-state {
++		pins = "gpio107";
++		bias-pull-up;
++	};
++	lcd_spi_default: lcd-spi-default-state {
++		pins = "gpio12", "gpio13", "gpio15";
++		function = "blsp_spi4";
++		drive-strength = <12>;
++		bias-disable;
++	};
++	lcd_cs_default: lcd-cs-default-state {
++		pins = "gpio14";
++		function = "blsp_spi4";
++		drive-strength = <2>;
++		bias-disable;
++	};
++	lcd_spi_sleep: lcd-spi-sleep-state {
++		pins = "gpio12", "gpio13", "gpio14", "gpio15";
++		function = "gpio";
++		drive-strength = <2>;
++		bias-pull-down;
++	};
++	lcd_control_default: lcd-control-default-state {
++		pins = "gpio116", "gpio118";
++		function = "gpio";
++		drive-strength = <8>;
++		bias-disable;
++	};
++};
++
++&bam_dmux {
++	qcom,a2-pin;
++};

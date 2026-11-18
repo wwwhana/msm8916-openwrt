@@ -3,7 +3,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=adbd
 PKG_VERSION:=34.0.5
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 PKG_SOURCE:=android-tools-$(PKG_VERSION).tar.xz
 PKG_SOURCE_URL:=https://github.com/nmeum/android-tools/releases/download/$(PKG_VERSION)
 PKG_HASH:=fb09cff12cfb82acf42a8ebebbc0342671bfcd02117716368bdc73fdda60304a
@@ -45,7 +45,7 @@ endef
 
 define Package/adbd/description
 	AOSP adbd for Linux. Provides shell, push and pull over the existing USB
-	composite gadget. Does not create a TCP listener. Enabled on A8 V18 only.
+composite gadget. Does not create a TCP listener. Enabled on A8 V18 and JZ08C V50.
 endef
 
 define Package/adbd/conffiles

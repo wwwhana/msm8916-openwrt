@@ -5,7 +5,7 @@ STOP=02
 
 a8_menu() {
     [ -x /usr/libexec/a8-menu ] &&
-        tr '\000' '\n' < /proc/device-tree/compatible | grep -qx 'mifib-v18,generic'
+        tr '\000' '\n' < /proc/device-tree/compatible | grep -qEx 'mifib-v18,generic|jz08c-v50,generic'
 }
 
 start_service() {

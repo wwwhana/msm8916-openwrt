@@ -217,6 +217,19 @@ define Device/generic-jz02
 endef
 TARGET_DEVICES += generic-jz02
 
+define Device/generic-jz08c-v50
+	$(Device/generic-jz02)
+	DEVICE_MODEL := JZ08C V50 (MF800-E)
+	DEVICE_DTS := msm8916-generic-jz08c-v50
+	SUPPORTED_DEVICES := jz08c-v50,generic
+	# Same 7,634,944-sector eMMC; reserve misc and recovery for boot failover.
+	GPT_TOT_SECTORS := 7634944
+	GPT_RECOVERY := 1
+	CMDLINE := "earlycon console=ttyMSM0,115200 fbcon=font:VGA8x16 root=/dev/mmcblk0p14 rootfstype=squashfs rootwait"
+	DEVICE_PACKAGES += a8-display adbd luci-app-bluetooth kmod-fs-exfat
+endef
+TARGET_DEVICES += generic-jz08c-v50
+
 define Device/generic-jz0145
 	$(Device/msm8916)
 	DEVICE_VENDOR := Generic

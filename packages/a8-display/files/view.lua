@@ -29,7 +29,7 @@ function M.frame(s, status, now, text_clock)
         local call=status.call
         local connected=call.state=='active' or call.state=='confirmed'
         local n=call.duration or 0
-        rows={'A8 PHONE',connected and 'IN CALL' or call.direction=='incoming' and 'INCOMING CALL' or 'CALLING',
+        rows={'PHONE',connected and 'IN CALL' or call.direction=='incoming' and 'INCOMING CALL' or 'CALLING',
             call.peer,'',connected and string.format('%02d:%02d',math.floor(n/60),n%60) or '',
             '',call.audio=='bluetooth' and 'BLUETOOTH' or 'WEB AUDIO',''}
     elseif s.saver then

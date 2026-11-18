@@ -38,7 +38,7 @@
 #     has no wlan0.
 #
 # Boards with GPT_RECOVERY=1 in msm89xx/image/msm8916.mk (hmuf02v5, mf800b,
-# mifib-v12, jz02, jz0145) flash this image to the dedicated 16 MiB 'recovery'
+# mifib-v12, jz02, jz08c-v50, jz0145) flash this image to the dedicated 16 MiB 'recovery'
 # GPT partition; other boards boot it one-shot from the running system with
 # 'reboot-recovery'.
 #
@@ -189,7 +189,8 @@ module_version() {
 # only that directory is copied in.  Anything a previous board left behind is
 # removed first - a mixed tree would silently ship the wrong firmware.
 install_blobs() {
-    local b="$1" src="$RECOVERY_DIR/blobs/$b"
+    local b="$1" src
+    src="${RECOVERY_BLOBS_DIR:-$RECOVERY_DIR/blobs/$b}"
     [ -d "$src" ] || die "No WiFi blobs for '$b'. Run:
        ./msm89xx/recovery/fetch-device-blobs.sh $b root@<device>"
     msg "Installing '$b' blobs (WCNSS firmware, hostapd, libs) into the initramfs"
@@ -217,7 +218,7 @@ install_modules() {
     ver="$(module_version "$src")"
     [ -n "$ver" ] || die "cannot read the kernel version from $src/wcn36xx.ko"
     msg "Installing kernel modules ($ver) into the initramfs"
-    if [ "$1" = mifib-v18 ]; then
+    if [ "$1" = mifib-v18 ] || [ "$1" = jz08c-v50 ]; then
         modules="$modules $RECOVERY_LCD_MODULES"
         # Some kernels build this small backlight driver in; others ship a module.
         [ ! -f "$src/gpio_backlight.ko" ] || modules="$modules gpio_backlight"
@@ -231,10 +232,15 @@ install_modules() {
 }
 
 install_display() {
-    [ "$1" = mifib-v18 ] || return 0
+    local init firmware
+    case "$1" in
+        mifib-v18) init=stock-init.hex; firmware=mifib-v18,gc9107.bin ;;
+        jz08c-v50) init=jz08c-v50-stock-init.hex; firmware=jz08c-v50,st7735s.bin ;;
+        *) return 0 ;;
+    esac
     python3 "$REPO_DIR/packages/a8-display/gen-panel.py" \
-        "$REPO_DIR/packages/a8-display/files/stock-init.hex" \
-        "$IRFS/lib/firmware/mifib-v18,gc9107.bin"
+        "$REPO_DIR/packages/a8-display/files/$init" \
+        "$IRFS/lib/firmware/$firmware"
     python3 "$RECOVERY_DIR/gen-splash.py" \
         "$REPO_DIR/msm89xx/image/lk2nd-a8/tux.h" "$IRFS/etc/recovery.ppm"
     chmod 755 "$IRFS/usr/sbin/recovery-display"
@@ -247,7 +253,9 @@ install_display() {
 # production image, which is the only copy guaranteed to match the shipped DTB.
 pack_image() {
     local b="$1" prod="$2" out="$RECOVERY_DIR/$b.img" cmdline="$RECOVERY_CMDLINE"
-    [ "$b" != mifib-v18 ] || cmdline="$cmdline fbcon=font:VGA8x16"
+    case "$b" in
+        mifib-v18|jz08c-v50) cmdline="$cmdline fbcon=font:VGA8x16" ;;
+    esac
     msg "Packing $b: production kernel + recovery initramfs"
     python3 - "$prod" "$IRFS" "$out" "$cmdline" <<'PY'
 import gzip, struct, subprocess, sys
@@ -313,6 +321,7 @@ case "$COMMAND" in
 esac
 
 if [ "$COMMAND" = "all" ]; then
+    [ -z "${RECOVERY_BLOBS_DIR:-}" ] || die "RECOVERY_BLOBS_DIR belongs to one board; select that board instead of 'all'."
     BOARDS="$(list_boards)"
 else
     BOARD="$COMMAND"

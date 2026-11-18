@@ -14,7 +14,7 @@ var answer = declare('voice_answer', ['subscription', 'session', 'id', 'audio', 
 var audio = declare('voice_audio', ['subscription', 'session', 'id', 'sequence', 'data', 'owner']);
 var errors = { 'service-unavailable': '모뎀 서비스에 연결할 수 없습니다.', 'sim-unavailable': 'SIM 연결을 다시 확인해 주세요.',
     busy: '진행 중인 통화를 먼저 종료해 주세요.', 'invalid-number': '전화번호를 확인해 주세요.',
-    'call-in-use': '다른 창에서 통화를 사용 중입니다.', 'call-unavailable': '통화가 종료되었습니다.', 'call-failed': '통화를 연결하지 못했습니다.', 'audio-busy': '음성 전송이 지연되고 있습니다.', 'bluetooth-unavailable': 'A8에 통화용 블루투스 헤드셋을 연결하세요.', 'bluetooth-audio-failed': '블루투스 음성을 열지 못했습니다.', 'bluetooth-disconnected': '블루투스 헤드셋 연결이 끊겼습니다.' };
+    'call-in-use': '다른 창에서 통화를 사용 중입니다.', 'call-unavailable': '통화가 종료되었습니다.', 'call-failed': '통화를 연결하지 못했습니다.', 'audio-busy': '음성 전송이 지연되고 있습니다.', 'bluetooth-unavailable': '기기에 통화용 블루투스 헤드셋을 연결하세요.', 'bluetooth-audio-failed': '블루투스 음성을 열지 못했습니다.', 'bluetooth-disconnected': '블루투스 헤드셋 연결이 끊겼습니다.' };
 
 function checked(result) { if (result.error) throw new Error(errors[result.error] || '통화 처리 중 오류가 발생했습니다.'); return result; }
 function withSIM(work) { return messaging.call('snapshot').then(function(snapshot) { return work(snapshot.service || {}); }).then(checked); }

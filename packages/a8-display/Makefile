@@ -4,7 +4,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=a8-display
 PKG_VERSION:=1.0
-PKG_RELEASE:=23
+PKG_RELEASE:=25
 PKG_LICENSE:=GPL-2.0-only OFL-1.1
 
 include $(INCLUDE_DIR)/kernel.mk
@@ -13,7 +13,7 @@ include $(INCLUDE_DIR)/package.mk
 # OpenWrt already packages panel-mipi-dbi; only GPIO backlight is missing.
 define KernelPackage/a8-backlight
   SUBMENU:=Video Support
-  TITLE:=A8 GPIO controlled MPP4 backlight
+  TITLE:=MiFi GPIO controlled MPP4 backlight
   DEPENDS:=@TARGET_msm89xx +kmod-backlight
   KCONFIG:=CONFIG_BACKLIGHT_GPIO CONFIG_PINCTRL_QCOM_SPMI_PMIC=y
   FILES:=$(LINUX_DIR)/drivers/video/backlight/gpio_backlight.ko
@@ -23,7 +23,7 @@ endef
 define Package/a8-display
   SECTION:=utils
   CATEGORY:=Utilities
-  TITLE:=A8 GC9107 display and one-button menu
+  TITLE:=MiFi 128x128 display and button menu
   DEPENDS:=@TARGET_msm89xx +kmod-a8-backlight +kmod-drm-panel-mipi-dbi +kmod-input-evdev +jsonfilter +lua +libuci-lua +luci-lib-jsonc +luci-lib-nixio +bluez-tools +sqlite3-cli +a8-image
 endef
 
@@ -33,6 +33,7 @@ endef
 
 define Build/Compile
 	python3 ./gen-panel.py ./files/stock-init.hex $(PKG_BUILD_DIR)/mifib-v18,gc9107.bin
+	python3 ./gen-panel.py ./files/jz08c-v50-stock-init.hex $(PKG_BUILD_DIR)/jz08c-v50,st7735s.bin
 	python3 $(TOPDIR)/target/linux/msm89xx/recovery/gen-splash.py $(TOPDIR)/target/linux/msm89xx/image/lk2nd-a8/tux.h $(PKG_BUILD_DIR)/boot.ppm
 	$(TARGET_CC) $(TARGET_CFLAGS) $(TARGET_CPPFLAGS) -std=c99 -Wall -Wextra \
 		-o $(PKG_BUILD_DIR)/a8-button ./src/a8-button.c $(TARGET_LDFLAGS)
@@ -41,6 +42,7 @@ endef
 define Package/a8-display/install
 	$(INSTALL_DIR) $(1)/lib/firmware $(1)/usr/sbin $(1)/etc/init.d $(1)/usr/libexec $(1)/usr/lib/lua/a8_display $(1)/usr/share/a8-display
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/mifib-v18,gc9107.bin $(1)/lib/firmware/
+	$(INSTALL_DATA) $(PKG_BUILD_DIR)/jz08c-v50,st7735s.bin $(1)/lib/firmware/
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/boot.ppm $(1)/usr/share/a8-display/
 	$(INSTALL_DATA) ./files/clock.ini $(1)/usr/share/a8-display/
 	$(INSTALL_DATA) ./files/unifont.bin ./files/unifont-OFL.txt $(1)/usr/share/a8-display/

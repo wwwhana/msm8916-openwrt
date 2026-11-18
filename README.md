@@ -80,11 +80,16 @@ Recent additions on top of the base port:
 | **`mifib-v18`** | `generic-mifib-v18` | A8 (HM-MiFiB-V18) | MSM8916 | 512 MB | 4 GB eMMC | 128×128 LCD and button menus |
 | **`uf896`**     | `generic-uf896`     | UF896 (v1.1) 4G LTE Router  | MSM8916 | 512 MB | 4 GB eMMC | Tri-colour + charger/network/wifi/data LEDs |
 | **`jz02`**      | `generic-jz02`      | JZ02 Battery MiFi (3 SIM switch lines) | MSM8916 | 512 MB | 4 GB eMMC | Network tri-colour + Wi-Fi red + battery red/green |
+| **`jz08c-v50`** | `generic-jz08c-v50` | JZ08C V50 (sold as MF800-E) | MSM8916 | — | 4 GB eMMC | 128×128 ST7735S LCD; experimental |
 | **`jz0145`**    | `generic-jz0145`    | JZ0145 V33 Stick | MSM8916 | 512 MB | 4 GB eMMC | Green / Blue / Red |
 
 The **A8 / HM-MiFiB-V18** has been tested with all existing functions except
 voice calls. See [`Docs/MIFIB_V18/README.md`](Docs/MIFIB_V18/README.md)
 for supported features and configuration.
+
+The **JZ08C V50 / MF800-E** port is experimental. See
+[`Docs/JZ08C_V50/README.md`](Docs/JZ08C_V50/README.md) for the stock hardware
+mapping and validation status.
 
 ### Per-board feature matrix
 
@@ -100,8 +105,10 @@ for supported features and configuration.
 | `mifib-v18` |    ✅       |    ✅     |          ✅           |          ✅           |           ✅            |         ✅          |         ✅          |
 | `uf896` |    ✅       |    ✅     |          ✅           |          ✅           |           ✅            |         ✅          |         —          |
 | `jz02` |    —       |    ✅     |          ✅           |          ✅           |           ✅            |         ✅          |         —          |
+| `jz08c-v50` | — | ⏳ | ⏳ | ⏳ | ⏳ | ⏳ | — |
 | `jz0145` |    ✅    |    ✅    |          ✅           |          ✅           |           ✅            |         ✅          |         —          |
 
+* `⏳` marks a configured feature awaiting live verification on JZ08C V50.
 * UZ801 v3 has no Bluetooth antenna; its image includes the software, but Bluetooth is unavailable on that board.
 * **Concurrent AP+STA** (Station Mode) is available on **every board** — the service, the mac80211 patches and `luci-app-wifi-sta` are all target-wide; see [the guide](Docs/WiFi/AP_STA_AND_LUCI_APP.md).
 
@@ -119,6 +126,7 @@ for supported features and configuration.
 | `mifib-v18` |         ✅           |      ✅      |         ✅         |      ✅      |
 | `uf896` |         —           |      —      |         —         |      —      |
 | `jz02` |         ✅           |      ✅      |         ✅         |      —      |
+| `jz08c-v50` | ⏳ | ⏳ | ✅ | — |
 | `jz0145` |       —            |      —       |         ✅         |      —      |
 
 * **Recovery partition** — the 17-partition layout (`misc` + `recovery`).  A `—` means the board keeps the 15-partition layout; see [`Docs/RECOVERY/`](Docs/RECOVERY/).
@@ -126,7 +134,7 @@ for supported features and configuration.
 * **Power button** — mifib-v12, mf800b and jz02 have a `pm8941_pwrkey`; see [`Docs/POWER_BUTTON.md`](Docs/POWER_BUTTON.md).
 * **SIM hot-swap** — the `sim-hotplug` service ships and is enabled on **every** board.  The table marks where the `sim_hotplug` line has been **confirmed**: HMUF02-V5 (verified end-to-end, ~15 s), mifib-v12 (same modem family, enabled, not yet soaked), and A8 (verified).  A `—` means the line is untested on that board, not that the service is missing — see [`Docs/SIM_HOT_SWAP.md`](Docs/SIM_HOT_SWAP.md).
 
-> The Wi-Fi/PMIC cooling maps are in the **shared `msm8916-ufi.dtsi`** (patch 861), which every board in the target includes, so all boards get them. The `a2_pin` modem-rail hold is enabled on the **HMUF02-V5, UZ801, UF02, HM-MIFIB-V12, JZ02 and UFI003** boards — the first four carry the same HiMI baseband family (`HIMI_U01_MODEM_V1.0`) exposed to the `a2_power.c:1189` quiesce wedge, the JZ02 (`M8936FAAAANUZM`) hit the same SSR loop (`modem pc-ack timeout during resume`), and UFI003's board DTS sets `qcom,a2-pin` on `&bam_dmux`; `UFI001B` (modem `MPSS.DPM.2.0.2`, V2.0) and `MF800B` do not set it, and **UF896 does not need it** (field-tested on real hardware — no `a2_power.c:1189` quiesce wedge was observed). Everything else applies to every board. Failsafe mode is enabled on **every board except the JZ02**, whose reset pinhole is not software-visible (hardware test: no GPIO, PMIC-GPIO or power-key event), so it has no button-triggered rescue mode; failsafe has been **live-verified on the HMUF02-V5, JZ0145 and A8**.
+> The Wi-Fi/PMIC cooling maps are in the **shared `msm8916-ufi.dtsi`** (patch 861), which every board in the target includes, so all boards get them. The `a2_pin` modem-rail hold is enabled on the **HMUF02-V5, UZ801, UF02, HM-MIFIB-V12, JZ02 and UFI003** boards — the first four carry the same HiMI baseband family (`HIMI_U01_MODEM_V1.0`) exposed to the `a2_power.c:1189` quiesce wedge, the JZ02 (`M8936FAAAANUZM`) hit the same SSR loop (`modem pc-ack timeout during resume`), and UFI003's board DTS sets `qcom,a2-pin` on `&bam_dmux`; `UFI001B` (modem `MPSS.DPM.2.0.2`, V2.0) and `MF800B` do not set it, and **UF896 does not need it** (field-tested on real hardware — no `a2_power.c:1189` quiesce wedge was observed). Everything else applies to every board. Button-triggered failsafe mode is unavailable on **JZ02 and JZ08C V50**. The JZ02 reset pinhole is not software-visible (hardware test: no GPIO, PMIC-GPIO or power-key event), and JZ08C V50 uses its exposed PMIC power key for menu control with GPIO keys disabled; failsafe has been **live-verified on the HMUF02-V5, JZ0145 and A8**.
 
 ### 🛠️ Adding a new board
 
@@ -285,7 +293,7 @@ Choice [1/2/3/4]:
 * **GPT Repartitioning**: Flashes the OpenWrt partition table (`*-squashfs-gpt_both0.bin`) via raw sector writes (`primary.bin`, `backup_entries.bin`, `backup_header.bin`) to repartition the eMMC safely.
 * **Firmware Extraction & Flashing**: Extracts `aboot.mbn`, `hyp.mbn`, `rpm.mbn`, `sbl1.mbn`, and `tz.mbn` from the board's `*-firmware.zip` and flashes them to the newly repartitioned layout.
 * **OpenWrt Installation**: Flashes the OpenWrt kernel/boot image (`*-squashfs-boot.img`), the rootfs system image (`*-squashfs-system.img`), and wipes `rootfs_data` (fast 2 MiB superblock wipe, reformatted on next boot).
-* **Partition Restoration**: Restores and immediately reads back each of the seven radio partitions. A read error or byte mismatch stops before the next partition, OpenWrt image write or reboot. See the [A8 radio preservation notes](Docs/MIFIB_V18/README.md#radio-data-preservation).
+* **Partition Restoration**: Restores and immediately reads back each of the seven radio partitions. A read error or byte mismatch stops before the next partition, OpenWrt image write or reboot. See the [radio preservation notes](Docs/MIFIB_V18/README.md#radio-data-preservation).
 * **Automatic Reboot**: Reboots the device straight into OpenWrt (`edl reset`).
 
 ---

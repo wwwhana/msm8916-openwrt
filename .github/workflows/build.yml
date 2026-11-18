@@ -27,6 +27,7 @@ on:
           - ufi003
           - uz801
           - jz02
+          - jz08c-v50
           - jz0145
 
 env:

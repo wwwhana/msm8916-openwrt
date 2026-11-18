@@ -1,5 +1,5 @@
 #!/bin/sh /etc/rc.common
-# JZ02 SIM-slot selector.
+# JZ02 / JZ08C V50 SIM-slot selector.
 #
 # The board has three SIM lines plus a re-announce pulse, exposed as gpio-leds
 # with the stock Android names:
@@ -11,12 +11,12 @@
 # Configure with:  uci set sim.slot=3 && uci commit sim
 # (1 = embedded, 2 = second, 3 = external; default 3)
 #
-# BOARDS: jz02 (the three SIM switch lines exist only there)
+# BOARDS: jz02 jz08c-v50 (matching stock SIM control GPIOs)
 
 START=20
 
 # Every board installs S20sim-select; exit before touching uci elsewhere.
-grep -q "jz02,generic" /proc/device-tree/compatible 2>/dev/null || exit 0
+tr '\000' '\n' < /proc/device-tree/compatible | grep -qEx 'jz02,generic|jz08c-v50,generic' || exit 0
 
 start() {
 	local slot L

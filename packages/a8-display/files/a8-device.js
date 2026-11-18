@@ -18,7 +18,8 @@ return view.extend({
         o.cfgvalue = function() {
             if (!hardware.supported) return '정보 없음';
             if (active.display === 'lcd')
-                return active.buttons === 'side' ? 'LCD · 사이드 이동 / 전원 선택' : 'LCD · 전원 짧게 이동 / 길게 선택';
+                return hardware.single_button ? 'LCD · 사이드 짧게 이동 / 길게 선택' :
+                    active.buttons === 'side' ? 'LCD · 사이드 이동 / 전원 선택' : 'LCD · 전원 짧게 이동 / 길게 선택';
             return hardware.display === 'led' ? 'LED 전용' : 'LCD 대기 중';
         };
         o = s.option(form.ListValue, 'display', '표시 방식');
@@ -26,8 +27,9 @@ return view.extend({
         o.value('led', 'LED 전용');
         o.default = 'lcd'; o.rmempty = false;
         o = s.option(form.ListValue, 'buttons', '메뉴 조작');
-        o.value('power', '전원 버튼만: 짧게 이동 / 길게 선택');
-        if (hardware.side || uci.get('a8_device', 'settings', 'buttons') === 'side')
+        o.value('power', hardware.single_button ? '사이드 버튼: 짧게 이동 / 길게 선택' :
+            '전원 버튼만: 짧게 이동 / 길게 선택');
+        if (!hardware.single_button && (hardware.side || uci.get('a8_device', 'settings', 'buttons') === 'side'))
             o.value('side', '사이드로 위·아래 / 전원으로 선택');
         o.default = 'power'; o.rmempty = false; o.retain = true; o.depends('display', 'lcd');
         var durations = [['0', '사용 안 함'], ['15', '15초'], ['30', '30초'], ['60', '1분'],

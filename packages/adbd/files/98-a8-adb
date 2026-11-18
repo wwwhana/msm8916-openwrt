@@ -1,6 +1,6 @@
 #!/bin/sh
-# Also runs when upgrading an existing A8, whose USB config is preserved.
-tr '\000' '\n' < /proc/device-tree/compatible | grep -qx 'mifib-v18,generic' || exit 0
+# Also runs when upgrading supported LCD boards with a preserved USB config.
+tr '\000' '\n' < /proc/device-tree/compatible | grep -qEx 'mifib-v18,generic|jz08c-v50,generic' || exit 0
 uci -q get usbgadget.adb >/dev/null && exit 0
 uci -q batch <<'EOF'
 set usbgadget.adb=function

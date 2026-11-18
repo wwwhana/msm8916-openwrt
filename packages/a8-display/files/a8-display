@@ -150,7 +150,7 @@ show_status() {
 }
 
 main() {
-	tr '\000' '\n' < /proc/device-tree/compatible | grep -qx 'mifib-v18,generic' || exit 0
+	tr '\000' '\n' < /proc/device-tree/compatible | grep -qEx 'mifib-v18,generic|jz08c-v50,generic' || exit 0
 	if [ "$1" = --boot ] && [ -c /dev/tty1 ]; then printf '\033[?25l' > /dev/tty1; fi
 	# Modules may finish probing after procd starts this service.
 	while [ ! -e /sys/class/graphics/fb0/name ] || [ ! -c /dev/tty1 ]; do sleep 1; done

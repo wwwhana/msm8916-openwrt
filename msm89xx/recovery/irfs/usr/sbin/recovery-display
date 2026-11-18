@@ -1,7 +1,7 @@
 #!/bin/busybox sh
-# LCD is fitted only on this variant. Run detached from the rescue services.
+# Run detached from the rescue services on the supported LCD variants.
 tr '\000' '\n' </proc/device-tree/compatible 2>/dev/null |
-    grep -qx 'mifib-v18,generic' || exit 0
+    grep -Eqx '(mifib-v18|jz08c-v50),generic' || exit 0
 
 for m in gpio_backlight drm_panel_orientation_quirks drm drm_kms_helper \
          drm_dma_helper drm_mipi_dbi panel-mipi-dbi; do

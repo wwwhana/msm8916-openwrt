@@ -214,4 +214,35 @@ blocked=true; assert(not hardware.display_power(false)); blocked=false
 write_failed=true; assert(not hardware.display_power(false)); write_failed=false
 closed_failed=true; assert(not hardware.display_power(false))
 io=actual_io
+
+-- A one-button board ignores stale dual-key settings and cannot reboot on
+-- repeated clicks while the framebuffer is still unavailable.
+local compatible='jz08c-v50,generic\0qcom,msm8916\0'
+local actual_settings=package.loaded['a8_display.settings']
+package.loaded['a8_display.settings']={read=function() return {display='lcd',buttons='side'} end}
+io={open=function(path)
+    assert(path=='/proc/device-tree/compatible')
+    return {read=function() return compatible end,close=function() end}
+end}
+hardware=dofile(files..'/device.lua')
+assert(hardware.supported() and hardware.single_button())
+assert(hardware.settings().buttons=='power')
+local execute=actual_os.execute
+local power_actions={}
+actual_os.execute=function(command) power_actions[#power_actions+1]=command; return 0 end
+assert(not hardware.legacy_release('released:150'))
+assert(not hardware.legacy_release('released:200'))
+assert(not hardware.legacy_release('released:3999'))
+assert(#power_actions==0)
+assert(hardware.legacy_release('released:4000'))
+assert(hardware.legacy_release('released:5000'))
+assert(#power_actions==2)
+assert(power_actions[1]=='ACTION=released BUTTON=power SEEN=4 /etc/rc.button/power')
+assert(power_actions[2]=='ACTION=released BUTTON=power SEEN=5 /etc/rc.button/power')
+actual_os.execute=execute
+compatible='jz08c-v50,generic-extra\0qcom,msm8916\0'
+assert(not hardware.supported() and not hardware.single_button())
+assert(hardware.settings().buttons=='side')
+io=actual_io
+package.loaded['a8_display.settings']=actual_settings
 print('LCD/LED routing, backlight sleep/wake and input-loss checks passed')

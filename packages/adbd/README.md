@@ -1,4 +1,4 @@
-# USB adbd for A8
+# USB adbd for OpenWrt MiFi devices
 
 This builds the AOSP 34.0.5 daemon from nmeum/android-tools' release source
 (SHA-256 in `Makefile`). It keeps BoringSSL and fmt from that archive and
@@ -19,9 +19,10 @@ The reconnect watcher uses the gadget manager's lock and restores a gadget
 unbound by FunctionFS. If descriptors are missing, it binds the remaining
 functions and adds ADB when the daemon is ready again.
 
-Only the A8 V18 image selects this package and enables it. Its one-time
-defaults script also handles an upgrade with an older preserved USB config,
-and leaves an existing ADB choice alone. A8 defaults to `auth=open`:
+The A8 V18 and JZ08C V50 (MF800-E) images select this package and enable it.
+The one-time defaults script also handles an upgrade with an older preserved
+USB config and leaves an existing ADB choice alone. Both profiles default to
+`auth=open`:
 **a connected USB computer gets a root shell without a confirmation dialog**.
 The daemon has no TCP/vsock listener and ignores Android's TCP properties.
 `adb tcpip` cannot enable a network listener.

@@ -13,7 +13,7 @@ LUCI_DESCRIPTION:=LuCI JS interface for the SMS via ModemManager. The user inter
 LUCI_PKGARCH:=all
 LUCI_DEPENDS:=+modemmanager +luci-proto-modemmanager +jsonfilter +sqlite3-cli +lua +luci-lib-nixio +luci-lib-jsonc
 PKG_VERSION:=1.1.4
-PKG_RELEASE:=2026110802
+PKG_RELEASE:=2026111801
 
 define Package/luci-app-sms-manager/conffiles
 /etc/config/sms_manager
